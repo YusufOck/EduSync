@@ -1,0 +1,127 @@
+package com.example.edusync.ui
+
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AdminExcelImportScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: AdminViewModel = hiltViewModel()
+) {
+    val context = LocalContext.current
+    val importState by viewModel.importState.collectAsState()
+    val previewItems by viewModel.excelPreview.collectAsState()
+    
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { viewModel.loadPreview(context, it) }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Excel İçe Aktar") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+            val currentPreview = previewItems // NPE önlemek için yerel değişken
+            
+            Column(
+                modifier = Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (currentPreview == null) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    Icon(Icons.Default.FileUpload, null, modifier = Modifier.size(100.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text("Ders ve Hoca Listesi Yükle", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text("Excel Formatı: Course Code | Course Name | Lecturer", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(32.dp))
+                    Button(onClick = { launcher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                        Text("DOSYA SEÇ")
+                    }
+                    Spacer(modifier = Modifier.weight(1.2f))
+                } else {
+                    Text("Excel Önizleme (İlk 5 Satır)", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Card(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        LazyColumn(modifier = Modifier.padding(8.dp)) {
+                            items(currentPreview) { item -> // Güvenli kullanım
+                                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                    Text("${item.courseCode}: ${item.courseName}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text("Hoca: ${item.lecturer}", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                                    HorizontalDivider(modifier = Modifier.padding(top = 4.dp), thickness = 0.5.dp)
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        OutlinedButton(onClick = { viewModel.clearImportState() }, modifier = Modifier.weight(1f)) {
+                            Text("İPTAL")
+                        }
+                        Button(onClick = { viewModel.confirmImport(context) }, modifier = Modifier.weight(1f)) {
+                            Text("ONAYLA VE AKTAR")
+                        }
+                    }
+                }
+            }
+
+            when (val state = importState) {
+                is ImportResult.Loading -> {
+                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+                is ImportResult.Success -> {
+                    AlertDialog(
+                        onDismissRequest = { viewModel.clearImportState() },
+                        icon = { Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF4CAF50)) },
+                        title = { Text("Başarılı") },
+                        text = { Text("${state.count} kayıt başarıyla sisteme aktarıldı.") },
+                        confirmButton = { TextButton(onClick = { viewModel.clearImportState() }) { Text("Tamam") } }
+                    )
+                }
+                is ImportResult.Error -> {
+                    AlertDialog(
+                        onDismissRequest = { viewModel.clearImportState() },
+                        title = { Text("Hata") },
+                        text = { Text(state.message) },
+                        confirmButton = { TextButton(onClick = { viewModel.clearImportState() }) { Text("Kapat") } }
+                    )
+                }
+                else -> {}
+            }
+        }
+    }
+}
