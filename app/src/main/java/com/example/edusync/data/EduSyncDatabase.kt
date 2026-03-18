@@ -11,7 +11,7 @@ import androidx.room.RoomDatabase
         VerificationCode::class,
         Course::class
     ], 
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class EduSyncDatabase : RoomDatabase() {

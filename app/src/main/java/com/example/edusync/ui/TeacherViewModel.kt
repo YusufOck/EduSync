@@ -2,10 +2,7 @@ package com.example.edusync.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.edusync.data.Course
-import com.example.edusync.data.Teacher
-import com.example.edusync.data.TeacherAvailability
-import com.example.edusync.data.TeacherRepository
+import com.example.edusync.data.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -23,13 +20,16 @@ class TeacherViewModel @Inject constructor(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
-    // Seçili hocanın müsaitlik matrisi
+    val currentTeacher = _selectedTeacherId.flatMapLatest { id ->
+        if (id == null) flowOf(null)
+        else repository.getAllTeachers().map { list -> list.find { it.id == id } }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     val availabilityMatrix = _selectedTeacherId.flatMapLatest { id ->
         if (id == null) flowOf(emptyList<TeacherAvailability>())
         else repository.getAvailability(id)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Seçili hocanın dersleri
     val teacherCourses = _selectedTeacherId.flatMapLatest { id ->
         if (id == null) flowOf(emptyList<Course>())
         else repository.getCoursesByTeacher(id)
@@ -46,10 +46,21 @@ class TeacherViewModel @Inject constructor(
         }
     }
 
-    fun toggleAvailability(dayIndex: Int, slotIndex: Int) {
-        // Öğle arası (slotIndex == 4) değiştirilemez
-        if (slotIndex == 4) return
+    fun deleteTeacher(teacher: Teacher) {
+        viewModelScope.launch {
+            repository.deleteTeacher(teacher)
+        }
+    }
 
+    fun updateScheduleStatus(status: ScheduleStatus, note: String = "") {
+        val teacher = currentTeacher.value ?: return
+        viewModelScope.launch {
+            repository.updateTeacher(teacher.copy(scheduleStatus = status, adminNote = note))
+        }
+    }
+
+    fun toggleAvailability(dayIndex: Int, slotIndex: Int) {
+        if (slotIndex == 4) return
         val teacherId = _selectedTeacherId.value ?: return
         val currentStatus = availabilityMatrix.value.find { 
             it.dayIndex == dayIndex && it.slotIndex == slotIndex 
@@ -64,6 +75,10 @@ class TeacherViewModel @Inject constructor(
                     isBusy = !(currentStatus?.isBusy ?: false)
                 )
             )
+            val teacher = currentTeacher.value
+            if (teacher != null && teacher.scheduleStatus != ScheduleStatus.PENDING) {
+                repository.updateTeacher(teacher.copy(scheduleStatus = ScheduleStatus.PENDING))
+            }
         }
     }
 }

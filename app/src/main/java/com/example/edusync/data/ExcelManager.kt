@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.InputStream
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -65,14 +66,9 @@ class ExcelManager @Inject constructor(
                 val lecturerFull = row.getCell(2)?.toString()?.trim() ?: ""
 
                 if (courseCode.isNotEmpty() && lecturerFull.isNotEmpty()) {
-                    // Lecturer ismini ayıklama: "Assoc. Prof. Halit Bakır"
                     val parts = lecturerFull.split(" ").filter { it.isNotBlank() }
-                    
-                    // Unvanları ayıkla (nokta içeren veya belirli kelimeler)
                     val titleParts = parts.filter { it.contains(".") || it.equals("Dr", ignoreCase = true) }
                     val title = titleParts.joinToString(" ")
-                    
-                    // İsim kısımlarını al (unvan olmayanlar)
                     val nameParts = parts.filter { !titleParts.contains(it) }
                     
                     val name = if (nameParts.isNotEmpty()) nameParts.first().trim() else ""
@@ -80,16 +76,10 @@ class ExcelManager @Inject constructor(
 
                     if (name.isEmpty()) continue
 
-                    // Küçük/büyük harf duyarlılığı olmadan kontrol (LOWER ile yapılacak DB sorgusu için)
-                    var teacher = teacherRepository.getTeacherByName(name, surname)
-                    val teacherId = if (teacher == null) {
-                        teacherRepository.insertTeacher(
-                            Teacher(name = name, surname = surname, title = title)
-                        ).toInt()
-                    } else {
-                        // Hoca zaten varsa unvanı güncelle (opsiyonel)
-                        teacher.id
-                    }
+                    // Veritabanına kaydederken ve ararken hep normalize (küçük harf + i/ı fix) kullanıyoruz
+                    val teacherId = teacherRepository.insertTeacher(
+                        Teacher(name = name, surname = surname, title = title)
+                    ).toInt()
 
                     teacherRepository.insertCourse(
                         Course(code = courseCode, name = courseName, teacherId = teacherId)

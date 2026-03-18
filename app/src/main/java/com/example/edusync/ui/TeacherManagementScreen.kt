@@ -1,37 +1,46 @@
 package com.example.edusync.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.edusync.data.ScheduleStatus
+import com.example.edusync.data.Teacher
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TeacherManagementScreen(
-    onNavigateBack: () -> Unit,
+    onNavigateBack: (() -> Unit)? = null,
     onTeacherClick: (Int) -> Unit,
     viewModel: TeacherViewModel = hiltViewModel()
 ) {
     val teachers by viewModel.teachers.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
+    var teacherToDelete by remember { mutableStateOf<Teacher?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Hoca Yönetimi") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Geri")
+                    if (onNavigateBack != null) {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                        }
                     }
                 }
             )
@@ -54,9 +63,9 @@ fun TeacherManagementScreen(
             ) {
                 items(teachers) { teacher ->
                     TeacherItem(
-                        name = "${teacher.name} ${teacher.surname}",
-                        department = teacher.department,
-                        onClick = { onTeacherClick(teacher.id) }
+                        teacher = teacher,
+                        onClick = { onTeacherClick(teacher.id) },
+                        onDelete = { teacherToDelete = teacher }
                     )
                 }
             }
@@ -71,31 +80,77 @@ fun TeacherManagementScreen(
                 }
             )
         }
+
+        teacherToDelete?.let { teacher ->
+            AlertDialog(
+                onDismissRequest = { teacherToDelete = null },
+                title = { Text("Hocayı Sil") },
+                text = { Text("${teacher.name} ${teacher.surname} isimli hocayı silmek istediğinize emin misiniz?") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.deleteTeacher(teacher)
+                            teacherToDelete = null
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) { Text("SİL") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { teacherToDelete = null }) { Text("İPTAL") }
+                }
+            )
+        }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TeacherItem(
-    name: String,
-    department: String,
-    onClick: () -> Unit
+    teacher: Teacher,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        colors = if (teacher.scheduleStatus == ScheduleStatus.PENDING) 
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))
+        else CardDefaults.cardColors()
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Person, contentDescription = null)
-            Spacer(modifier = Modifier.width(16.dp))
-            Column {
-                Text(text = name, style = MaterialTheme.typography.titleMedium)
-                if (department.isNotEmpty()) {
-                    Text(text = department, style = MaterialTheme.typography.bodySmall)
+            Box(contentAlignment = Alignment.TopEnd) {
+                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(32.dp))
+                if (teacher.scheduleStatus == ScheduleStatus.PENDING) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .background(Color.Red, CircleShape)
+                    )
                 }
+            }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "${teacher.title} ${teacher.name} ${teacher.surname}", style = MaterialTheme.typography.titleMedium)
+                val statusText = when(teacher.scheduleStatus) {
+                    ScheduleStatus.PENDING -> "Yeni İstek Var!"
+                    ScheduleStatus.APPROVED -> "Onaylı"
+                    ScheduleStatus.REJECTED -> "Reddedildi"
+                    ScheduleStatus.ADMIN_PROPOSAL -> "Öneri Bekliyor"
+                }
+                Text(
+                    text = statusText, 
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (teacher.scheduleStatus == ScheduleStatus.PENDING) Color.Red else Color.Gray
+                )
+            }
+            
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "Sil", tint = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -114,30 +169,18 @@ fun AddTeacherDialog(
         title = { Text("Yeni Hoca Ekle") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Ad") }
-                )
-                OutlinedTextField(
-                    value = surname,
-                    onValueChange = { surname = it },
-                    label = { Text("Soyad") }
-                )
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Ad") })
+                OutlinedTextField(value = surname, onValueChange = { surname = it }, label = { Text("Soyad") })
             }
         },
         confirmButton = {
             TextButton(
                 onClick = { if (name.isNotBlank() && surname.isNotBlank()) onConfirm(name, surname) },
                 enabled = name.isNotBlank() && surname.isNotBlank()
-            ) {
-                Text("Ekle")
-            }
+            ) { Text("Ekle") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("İptal")
-            }
+            TextButton(onClick = onDismiss) { Text("İptal") }
         }
     )
 }

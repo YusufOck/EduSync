@@ -60,7 +60,7 @@ fun AppNavigation() {
                         }
                         
                         val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true ||
-                                (screen is Screen.TeacherSchedule && currentDestination?.route == Screen.TeacherSchedule.route)
+                                (screen is Screen.TeacherSchedule && currentDestination?.route?.startsWith("teacher_schedule") == true)
 
                         NavigationBarItem(
                             icon = { Icon(screen.icon, contentDescription = screen.title) },
@@ -109,11 +109,14 @@ fun AppNavigation() {
                 arguments = listOf(navArgument("teacherId") { type = NavType.IntType })
             ) { backStackEntry ->
                 val teacherId = backStackEntry.arguments?.getInt("teacherId") ?: 0
-                // Eğer admin bakıyorsa readonly olsun veya sadece izleme modu olsun
+                
+                // Hoca kendi ekranındaysa geri tuşu olmasın, admin hocaya bakıyorsa olsun.
+                val showBackButton = currentUserRole == UserRole.ADMIN
+
                 TeacherScheduleScreen(
                     teacherId = teacherId,
                     isReadOnly = currentUserRole == UserRole.ADMIN,
-                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateBack = if (showBackButton) { { navController.popBackStack() } } else null,
                     onLogout = if (currentUserRole == UserRole.TEACHER) {
                         {
                             currentUserRole = null

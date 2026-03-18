@@ -9,9 +9,10 @@ enum class UserRole {
 }
 
 enum class ScheduleStatus {
-    PENDING, // Hoca girdi yaptı, admin onayı bekliyor
-    APPROVED, // Admin onayladı
-    REJECTED // Admin reddetti, hoca tekrar düzenlemeli
+    PENDING,        // Hoca girdi yaptı, admin onayı bekliyor
+    APPROVED,       // Onaylı / Her şey yolunda
+    REJECTED,       // Admin reddetti
+    ADMIN_PROPOSAL  // Admin teklif sundu, hoca onayı bekliyor
 }
 
 @Entity(tableName = "users")
@@ -32,8 +33,8 @@ data class Teacher(
     val surname: String,
     val department: String = "",
     val title: String = "",
-    val scheduleStatus: ScheduleStatus = ScheduleStatus.PENDING,
-    val adminNote: String = "" // Admin'in reddetme sebebi veya notu
+    val scheduleStatus: ScheduleStatus = ScheduleStatus.APPROVED, // Varsayılanı APPROVED yaptık (Bildirimleri temizlemek için)
+    val adminNote: String = ""
 )
 
 @Entity(
@@ -68,7 +69,7 @@ data class TeacherAvailability(
 )
 data class Course(
     @PrimaryKey
-    val code: String, // CNG 103 vb.
+    val code: String,
     val name: String,
     val teacherId: Int? = null
 )

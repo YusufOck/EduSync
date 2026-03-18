@@ -24,6 +24,9 @@ interface TeacherDao {
     @Update
     suspend fun updateTeacher(teacher: Teacher)
 
+    @Delete
+    suspend fun deleteTeacher(teacher: Teacher)
+
     @Query("SELECT * FROM teacher_availability WHERE teacherId = :teacherId")
     fun getAvailability(teacherId: Int): Flow<List<TeacherAvailability>>
 

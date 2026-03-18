@@ -56,7 +56,7 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold
             )
-            
+
             Text(
                 text = if (isRegisterMode) "Hoca Kayıt Paneli" else "Akademik Giriş",
                 style = MaterialTheme.typography.titleMedium,
@@ -72,9 +72,9 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
@@ -101,14 +101,16 @@ fun LoginScreen(
                         onValueChange = { name = it },
                         label = { Text("Ad") },
                         modifier = Modifier.weight(1f),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                     )
                     OutlinedTextField(
                         value = surname,
                         onValueChange = { surname = it },
                         label = { Text("Soyad") },
                         modifier = Modifier.weight(1f),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
                     )
                 }
             }
@@ -132,13 +134,13 @@ fun LoginScreen(
             }
 
             TextButton(
-                onClick = { 
-                    isRegisterMode = !isRegisterMode 
+                onClick = {
+                    isRegisterMode = !isRegisterMode
                     viewModel.resetState()
                 }
             ) {
                 Text(
-                    if (isRegisterMode) "Zaten hesabım var? Giriş Yap" 
+                    if (isRegisterMode) "Zaten hesabım var? Giriş Yap"
                     else "Yeni hoca mısınız? Buradan kayıt olun"
                 )
             }
