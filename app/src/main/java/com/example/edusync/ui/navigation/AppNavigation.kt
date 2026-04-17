@@ -24,7 +24,6 @@ fun AppNavigation() {
     var currentUserRole by remember { mutableStateOf<UserRole?>(null) }
     var loggedInTeacherId by remember { mutableStateOf<Int?>(null) }
 
-    // Hangi BottomBar gösterilecek?
     val showAdminBar = currentUserRole == UserRole.ADMIN && currentDestination?.route != Screen.Login.route
     val showTeacherBar = currentUserRole == UserRole.TEACHER && currentDestination?.route != Screen.Login.route
 
@@ -109,8 +108,6 @@ fun AppNavigation() {
                 arguments = listOf(navArgument("teacherId") { type = NavType.IntType })
             ) { backStackEntry ->
                 val teacherId = backStackEntry.arguments?.getInt("teacherId") ?: 0
-                
-                // Hoca kendi ekranındaysa geri tuşu olmasın, admin hocaya bakıyorsa olsun.
                 val showBackButton = currentUserRole == UserRole.ADMIN
 
                 TeacherScheduleScreen(
@@ -137,7 +134,6 @@ fun AppNavigation() {
                 )
             }
 
-            // Admin Screens
             composable(Screen.AdminDashboard.route) {
                 AdminDashboardScreen(
                     onLogout = {
@@ -149,7 +145,7 @@ fun AppNavigation() {
 
             composable(Screen.TeacherManagement.route) {
                 TeacherManagementScreen(
-                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateBack = { navController.popBackStack() }, // BURADA DÜZELTME YAPILDI
                     onTeacherClick = { teacherId ->
                         navController.navigate(Screen.TeacherSchedule.createRoute(teacherId))
                     }

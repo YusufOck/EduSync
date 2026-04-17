@@ -19,9 +19,9 @@ enum class ScheduleStatus {
 data class User(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-    val username: String,
-    val password: String,
-    val role: UserRole,
+    val username: String = "",
+    val password: String = "",
+    val role: UserRole = UserRole.TEACHER,
     val teacherId: Int? = null
 )
 
@@ -29,11 +29,11 @@ data class User(
 data class Teacher(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-    val name: String,
-    val surname: String,
+    val name: String = "",
+    val surname: String = "",
     val department: String = "",
     val title: String = "",
-    val scheduleStatus: ScheduleStatus = ScheduleStatus.APPROVED, // Varsayılanı APPROVED yaptık (Bildirimleri temizlemek için)
+    val scheduleStatus: ScheduleStatus = ScheduleStatus.APPROVED,
     val adminNote: String = ""
 )
 
@@ -50,9 +50,9 @@ data class Teacher(
     ]
 )
 data class TeacherAvailability(
-    val teacherId: Int,
-    val dayIndex: Int,
-    val slotIndex: Int,
+    val teacherId: Int = 0,
+    val dayIndex: Int = 0,
+    val slotIndex: Int = 0,
     val isBusy: Boolean = false
 )
 
@@ -69,15 +69,15 @@ data class TeacherAvailability(
 )
 data class Course(
     @PrimaryKey
-    val code: String,
-    val name: String,
+    val code: String = "",
+    val name: String = "",
     val teacherId: Int? = null
 )
 
 @Entity(tableName = "verification_codes")
 data class VerificationCode(
     @PrimaryKey
-    val code: String,
+    val code: String = "",
     val isUsed: Boolean = false,
     val createdBy: String = "ADMIN"
 )

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "471708951731",
+    "project_id": "edusync-e905f",
+    "storage_bucket": "edusync-e905f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:471708951731:android:f4f8634afb0cd847dbbcc6",
+        "android_client_info": {
+          "package_name": "com.example.edusync"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD9bEJ4LphiYtwJubodihYSsmSN0qhZ6-4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
