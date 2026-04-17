@@ -3,6 +3,7 @@ package com.example.edusync.data
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.ForeignKey
+import com.google.firebase.database.PropertyName
 
 enum class UserRole {
     ADMIN, TEACHER
@@ -10,7 +11,7 @@ enum class UserRole {
 
 enum class ScheduleStatus {
     PENDING,        // Hoca girdi yaptı, admin onayı bekliyor
-    APPROVED,       // Onaylı / Her şey yolunda
+    APPROVED,       // Onaylı
     REJECTED,       // Admin reddetti
     ADMIN_PROPOSAL  // Admin teklif sundu, hoca onayı bekliyor
 }
@@ -39,34 +40,19 @@ data class Teacher(
 
 @Entity(
     tableName = "teacher_availability",
-    primaryKeys = ["teacherId", "dayIndex", "slotIndex"],
-    foreignKeys = [
-        ForeignKey(
-            entity = Teacher::class,
-            parentColumns = ["id"],
-            childColumns = ["teacherId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ]
+    primaryKeys = ["teacherId", "dayIndex", "slotIndex"]
 )
 data class TeacherAvailability(
-    val teacherId: Int = 0,
-    val dayIndex: Int = 0,
-    val slotIndex: Int = 0,
-    val isBusy: Boolean = false
+    var teacherId: Int = 0,
+    var dayIndex: Int = 0,
+    var slotIndex: Int = 0,
+    
+    @get:PropertyName("busy")
+    @set:PropertyName("busy")
+    var isBusy: Boolean = false
 )
 
-@Entity(
-    tableName = "courses",
-    foreignKeys = [
-        ForeignKey(
-            entity = Teacher::class,
-            parentColumns = ["id"],
-            childColumns = ["teacherId"],
-            onDelete = ForeignKey.SET_NULL
-        )
-    ]
-)
+@Entity(tableName = "courses")
 data class Course(
     @PrimaryKey
     val code: String = "",
@@ -77,7 +63,11 @@ data class Course(
 @Entity(tableName = "verification_codes")
 data class VerificationCode(
     @PrimaryKey
-    val code: String = "",
-    val isUsed: Boolean = false,
-    val createdBy: String = "ADMIN"
+    var code: String = "",
+    
+    @get:PropertyName("used")
+    @set:PropertyName("used")
+    var isUsed: Boolean = false,
+    
+    var createdBy: String = "ADMIN"
 )

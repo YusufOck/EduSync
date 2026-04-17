@@ -145,7 +145,7 @@ fun AppNavigation() {
 
             composable(Screen.TeacherManagement.route) {
                 TeacherManagementScreen(
-                    onNavigateBack = { navController.popBackStack() }, // BURADA DÜZELTME YAPILDI
+                    onNavigateBack = { navController.popBackStack(); Unit }, // Unit eklendi, hata giderildi.
                     onTeacherClick = { teacherId ->
                         navController.navigate(Screen.TeacherSchedule.createRoute(teacherId))
                     }

@@ -4,10 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.edusync.data.ExcelManager
-import com.example.edusync.data.ExcelPreviewItem
-import com.example.edusync.data.UserDao
-import com.example.edusync.data.VerificationCode
+import com.example.edusync.data.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -17,16 +14,10 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
 
-sealed class ImportResult {
-    object Loading : ImportResult()
-    data class Success(val count: Int) : ImportResult()
-    data class Error(val message: String) : ImportResult()
-}
-
 @HiltViewModel
 class AdminViewModel @Inject constructor(
     private val excelManager: ExcelManager,
-    private val userDao: UserDao
+    private val userRepository: FirebaseUserRepository
 ) : ViewModel() {
 
     private val _importState = MutableStateFlow<ImportResult?>(null)
@@ -37,14 +28,13 @@ class AdminViewModel @Inject constructor(
 
     private var currentUri: Uri? = null
 
-    // Kayıt Kodları - Doğrudan DB'den dinle
-    val verificationCodes = userDao.getAllVerificationCodes()
+    val verificationCodes = userRepository.getAllVerificationCodes()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun generateCode() {
         viewModelScope.launch {
             val newCode = UUID.randomUUID().toString().substring(0, 8).uppercase()
-            userDao.insertVerificationCode(VerificationCode(code = newCode))
+            userRepository.insertVerificationCode(VerificationCode(code = newCode))
         }
     }
 

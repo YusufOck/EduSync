@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.edusync.data.ExcelPreviewItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,8 +30,8 @@ fun AdminExcelImportScreen(
     viewModel: AdminViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    val importState by viewModel.importState.collectAsState()
-    val previewItems by viewModel.excelPreview.collectAsState()
+    val importState by viewModel.importState.collectAsState(initial = null)
+    val previewItems by viewModel.excelPreview.collectAsState(initial = null)
     
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -51,7 +52,7 @@ fun AdminExcelImportScreen(
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            val currentPreview = previewItems // NPE önlemek için yerel değişken
+            val currentPreview = previewItems
             
             Column(
                 modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -74,7 +75,7 @@ fun AdminExcelImportScreen(
                     
                     Card(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         LazyColumn(modifier = Modifier.padding(8.dp)) {
-                            items(currentPreview) { item -> // Güvenli kullanım
+                            items(currentPreview) { item ->
                                 Column(modifier = Modifier.padding(vertical = 4.dp)) {
                                     Text("${item.courseCode}: ${item.courseName}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                     Text("Hoca: ${item.lecturer}", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)

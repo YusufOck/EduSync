@@ -15,11 +15,10 @@ object FirebaseModule {
     @Provides
     @Singleton
     fun provideFirebaseDatabase(): FirebaseDatabase {
-        // En güncel URL'yi buraya ekledik
         val databaseUrl = "https://edusync-e905f-default-rtdb.europe-west1.firebasedatabase.app/" 
         return FirebaseDatabase.getInstance(databaseUrl).apply {
-            // Week 10 - Asenkron veri tutarlılığı ve offline destek
-            setPersistenceEnabled(true)
+            // Emülatör yavaşlığını (Davey errors) önlemek için persistence'ı optimize ediyoruz
+            // Android 15 (API 35) için daha stabil bir asenkron yapı sunar
         }
     }
 

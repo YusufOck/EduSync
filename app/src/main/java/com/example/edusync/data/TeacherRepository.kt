@@ -1,9 +1,6 @@
 package com.example.edusync.data
 
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.*
 import com.example.edusync.util.SecurityUtils
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -23,7 +20,7 @@ class TeacherRepository @Inject constructor(
     private val availabilityRef = database.getReference("availability")
 
     /**
-     * READ: Verileri çekerken asenkron olarak deşifre eder (AES Decrypt).
+     * ASYNC READ: Firebase'den gelen şifreli verileri asenkron deşifre eder (AES Decrypt).
      */
     fun getAllTeachers(): Flow<List<Teacher>> = callbackFlow {
         val listener = object : ValueEventListener {
@@ -45,41 +42,30 @@ class TeacherRepository @Inject constructor(
         awaitClose { teachersRef.removeEventListener(listener) }
     }
 
-    /**
-     * WRITE: Verileri kaydederken asenkron olarak şifreler (AES Encrypt).
-     */
+    suspend fun getTeacherByName(name: String, surname: String): Teacher? {
+        val allTeachers = getAllTeachers().first()
+        return allTeachers.find { 
+            normalize(it.name) == normalize(name) && normalize(it.surname) == normalize(surname)
+        }
+    }
+
+    private fun normalize(t: String) = t.lowercase(Locale("tr")).replace('ı','i').replace('ş','s').replace('ğ','g').replace('ü','u').replace('ö','o').replace('ç','c').trim()
+
     suspend fun insertTeacher(teacher: Teacher): Long {
         val existing = getTeacherByName(teacher.name, teacher.surname)
         val targetRef = if (existing != null) teachersRef.child(existing.id.toString()) else teachersRef.push()
+        val id = existing?.id ?: targetRef.key?.hashCode() ?: System.currentTimeMillis().toInt()
         
-        val newId = existing?.id ?: (targetRef.key?.hashCode() ?: System.currentTimeMillis().toInt())
-        
-        // Hassas verileri AES ile şifreliyoruz
         val encryptedTeacher = teacher.copy(
-            id = newId,
+            id = id,
             name = SecurityUtils.encrypt(teacher.name),
             surname = SecurityUtils.encrypt(teacher.surname),
             department = SecurityUtils.encrypt(teacher.department),
             title = SecurityUtils.encrypt(teacher.title),
             adminNote = SecurityUtils.encrypt(teacher.adminNote)
         )
-        
         targetRef.setValue(encryptedTeacher).await()
-        return newId.toLong()
-    }
-
-    suspend fun getTeacherByName(name: String, surname: String): Teacher? {
-        val allTeachers = getAllTeachers().first()
-        return allTeachers.find { 
-            normalizeForComparison(it.name) == normalizeForComparison(name) &&
-            normalizeForComparison(it.surname) == normalizeForComparison(surname)
-        }
-    }
-
-    private fun normalizeForComparison(text: String): String {
-        return text.lowercase(Locale("tr"))
-            .replace('ı', 'i').replace('ğ', 'g').replace('ü', 'u')
-            .replace('ş', 's').replace('ö', 'o').replace('ç', 'c').trim()
+        return id.toLong()
     }
 
     suspend fun updateTeacher(teacher: Teacher) {
@@ -102,8 +88,7 @@ class TeacherRepository @Inject constructor(
         val ref = availabilityRef.child(teacherId.toString())
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = snapshot.children.mapNotNull { it.getValue(TeacherAvailability::class.java) }
-                trySend(list)
+                trySend(snapshot.children.mapNotNull { it.getValue(TeacherAvailability::class.java) })
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
@@ -116,7 +101,6 @@ class TeacherRepository @Inject constructor(
         availabilityRef.child(availability.teacherId.toString()).child(key).setValue(availability).await()
     }
 
-    // Courses (Ders isimlerini de şifreliyoruz)
     suspend fun insertCourse(course: Course) {
         val encryptedCourse = course.copy(name = SecurityUtils.encrypt(course.name))
         coursesRef.child(course.code).setValue(encryptedCourse).await()

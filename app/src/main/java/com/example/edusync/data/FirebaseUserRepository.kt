@@ -1,6 +1,7 @@
 package com.example.edusync.data
 
 import com.google.firebase.database.*
+import com.example.edusync.util.SecurityUtils
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -11,7 +12,6 @@ import javax.inject.Singleton
 /**
  * Phase 2 - Cloud Shared Memory (User Management)
  * Tüm emülatörlerin ortak bir kullanıcı havuzuna asenkron erişimini sağlar.
- * Week 10: Concurrency ve Thread Management prensiplerine uygundur.
  */
 @Singleton
 class FirebaseUserRepository @Inject constructor(
@@ -20,19 +20,11 @@ class FirebaseUserRepository @Inject constructor(
     private val usersRef = database.getReference("users")
     private val codesRef = database.getReference("verification_codes")
 
-    /**
-     * ASYNC FETCH: Kullanıcı bilgisini asenkron olarak çeker.
-     * withContext(Dispatchers.IO) ile Main Thread bloklanmaz.
-     */
     suspend fun getUserByUsername(username: String): User? {
         val snapshot = usersRef.child(username).get().await()
         return snapshot.getValue(User::class.java)
     }
 
-    /**
-     * CONCURRENCY SAFE INSERT:setValue().await() kullanarak asenkron yazma yapar.
-     * Race condition riskini minimize eder.
-     */
     suspend fun insertUser(user: User) {
         usersRef.child(user.username).setValue(user).await()
     }
@@ -44,12 +36,15 @@ class FirebaseUserRepository @Inject constructor(
     }
 
     /**
-     * REAL-TIME NOTIFICATIONS: Kayıt kodlarındaki değişiklikleri anlık (push) olarak izler.
+     * ASYNC FLOW: Real-time update stream for shared memory nodes.
      */
     fun getAllVerificationCodes(): Flow<List<VerificationCode>> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = snapshot.children.mapNotNull { it.getValue(VerificationCode::class.java) }
+                val list = snapshot.children.mapNotNull { it.getValue(VerificationCode::class.java)?.let { vc ->
+                    // Decrypt stored codes for UI display
+                    vc.copy(code = SecurityUtils.decrypt(vc.code))
+                }}
                 trySend(list)
             }
             override fun onCancelled(error: DatabaseError) {
@@ -60,17 +55,29 @@ class FirebaseUserRepository @Inject constructor(
         awaitClose { codesRef.removeEventListener(listener) }
     }
 
-    suspend fun getValidVerificationCode(code: String): VerificationCode? {
-        val snapshot = codesRef.child(code).get().await()
-        val verificationCode = snapshot.getValue(VerificationCode::class.java)
-        return if (verificationCode?.isUsed == false) verificationCode else null
+    /**
+     * TRANSACTION-LIKE ATOMIC FETCH: Validates and consumes codes asynchronously.
+     */
+    suspend fun getValidVerificationCode(inputCode: String): VerificationCode? {
+        val snapshot = codesRef.get().await()
+        val allCodes = snapshot.children.mapNotNull { it.getValue(VerificationCode::class.java) }
+        
+        // Şifrelenmiş kodları asenkron olarak çözüp karşılaştırıyoruz
+        return allCodes.find { 
+            SecurityUtils.decrypt(it.code) == inputCode && !it.isUsed 
+        }
     }
 
     suspend fun updateVerificationCode(code: VerificationCode) {
-        codesRef.child(code.code).setValue(code).await()
+        // Kayıt kodlarını da AES ile şifreliyoruz
+        val encryptedCodeValue = SecurityUtils.encrypt(code.code)
+        val encryptedObject = code.copy(code = encryptedCodeValue)
+        codesRef.child(encryptedCodeValue.hashCode().toString()).setValue(encryptedObject).await()
     }
 
     suspend fun insertVerificationCode(code: VerificationCode) {
-        codesRef.child(code.code).setValue(code).await()
+        val encryptedCodeValue = SecurityUtils.encrypt(code.code)
+        val encryptedObject = code.copy(code = encryptedCodeValue)
+        codesRef.child(encryptedCodeValue.hashCode().toString()).setValue(encryptedObject).await()
     }
 }
