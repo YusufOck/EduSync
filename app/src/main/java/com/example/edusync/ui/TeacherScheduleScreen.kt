@@ -19,7 +19,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -47,7 +46,6 @@ fun TeacherScheduleScreen(
     val availability by viewModel.availabilityMatrix.collectAsState()
     val courses by viewModel.teacherCourses.collectAsState()
     val isAdminEditing by viewModel.isAdminEditing.collectAsState()
-    val isTeacherEditing by viewModel.isTeacherEditing.collectAsState()
 
     var showNoteDialog by remember { mutableStateOf(false) }
     var noteInput by remember { mutableStateOf("") }
@@ -66,7 +64,7 @@ fun TeacherScheduleScreen(
                             fontWeight = FontWeight.Bold,
                             color = PrimaryBlue
                         )
-                        teacher?.let { StatusBadge(it.scheduleStatus) }
+                        teacher?.let { StatusBadge(it.scheduleStatus, isReadOnly) }
                     }
                 },
                 navigationIcon = {
@@ -87,23 +85,16 @@ fun TeacherScheduleScreen(
                                 tint = if (isAdminEditing) PrimaryBlue else Color.Gray
                             )
                         }
-                    } else if (teacher?.scheduleStatus != ScheduleStatus.PENDING && teacher?.scheduleStatus != ScheduleStatus.ADMIN_PROPOSAL) {
-                        IconButton(
-                            onClick = { if (isTeacherEditing) viewModel.cancelTeacherEdit() else viewModel.startTeacherEdit() }
-                        ) {
-                            Icon(
-                                if (isTeacherEditing) Icons.Default.EditOff else Icons.Default.Edit, 
-                                "Düzenle",
-                                tint = if (isTeacherEditing) PrimaryBlue else Color.Gray
-                            )
-                        }
                     }
                     if (onLogout != null) {
                         IconButton(onClick = onLogout) {
                             Icon(Icons.AutoMirrored.Filled.ExitToApp, "Çıkış Yap", tint = ErrorRed)
                         }
                     }
-                }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                )
             )
         },
         bottomBar = {
@@ -176,26 +167,6 @@ fun TeacherScheduleScreen(
                                 Text("REDDET")
                             }
                         }
-                    } else if (isTeacherEditing) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button(
-                                onClick = { showNoteDialog = true },
-                                modifier = Modifier.weight(1.3f).height(54.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.Send, null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("ADMİNE GÖNDER", fontWeight = FontWeight.Bold)
-                            }
-                            OutlinedButton(
-                                onClick = { viewModel.cancelTeacherEdit() },
-                                modifier = Modifier.weight(1f).height(54.dp),
-                                shape = RoundedCornerShape(16.dp)
-                            ) {
-                                Text("VAZGEÇ")
-                            }
-                        }
                     }
                 }
             }
@@ -207,14 +178,16 @@ fun TeacherScheduleScreen(
                 .fillMaxSize()
                 .background(BackgroundLight)
         ) {
-            // Dynamic Message Banner
-            val msg = if (isReadOnly) {
-                if (teacher?.scheduleStatus == ScheduleStatus.PENDING) teacher?.teacherNote else ""
+            // Logic for showing notes
+            val msgToShow = if (isReadOnly) {
+                // Admin sees what teacher wrote when rejecting OR if there's a legacy pending
+                if (teacher?.scheduleStatus == ScheduleStatus.REJECTED || teacher?.scheduleStatus == ScheduleStatus.PENDING) teacher?.teacherNote else ""
             } else {
-                if (teacher?.scheduleStatus == ScheduleStatus.REJECTED || teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) teacher?.adminNote else ""
+                // Teacher sees admin's note for proposal
+                if (teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL || teacher?.scheduleStatus == ScheduleStatus.REJECTED) teacher?.adminNote else ""
             }
 
-            AnimatedVisibility(visible = !msg.isNullOrEmpty()) {
+            AnimatedVisibility(visible = !msgToShow.isNullOrEmpty()) {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     colors = CardDefaults.cardColors(containerColor = LightBlue),
@@ -222,22 +195,22 @@ fun TeacherScheduleScreen(
                     elevation = CardDefaults.cardElevation(4.dp)
                 ) {
                     Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Chat, null, tint = PrimaryBlue)
+                        Icon(Icons.Default.ChatBubbleOutline, null, tint = PrimaryBlue)
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
+                            val label = if (isReadOnly) "Hoca'dan Gelen Gerekçe" else "Admin'den Gelen Not"
                             Text(
-                                if (isReadOnly) "Hoca'dan Gelen Not" else "Admin'den Gelen Mesaj",
+                                text = label,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = PrimaryBlue
                             )
-                            Text(msg ?: "", style = MaterialTheme.typography.bodyMedium, color = TextDark)
+                            Text(msgToShow ?: "", style = MaterialTheme.typography.bodyMedium, color = TextDark)
                         }
                     }
                 }
             }
 
-            // Courses Chip List
             if (courses.isNotEmpty()) {
                 Text("Sorumlu Olduğu Dersler", modifier = Modifier.padding(start = 16.dp, top = 8.dp), style = MaterialTheme.typography.labelMedium, color = TextLight)
                 LazyColumn(modifier = Modifier.heightIn(max = 100.dp).padding(horizontal = 12.dp)) {
@@ -261,8 +234,6 @@ fun TeacherScheduleScreen(
                 }
             }
 
-            val isInteractionEnabled = isAdminEditing || isTeacherEditing
-
             LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                 itemsIndexed(timeSlots) { slotIndex, time ->
                     Row(modifier = Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -282,7 +253,7 @@ fun TeacherScheduleScreen(
                                             else -> SuccessGreen
                                         }
                                     )
-                                    .clickable(enabled = !isLunch && isInteractionEnabled) {
+                                    .clickable(enabled = !isLunch && isAdminEditing) {
                                         viewModel.toggleAvailability(dayIndex, slotIndex)
                                     },
                                 contentAlignment = Alignment.Center
@@ -305,12 +276,17 @@ fun TeacherScheduleScreen(
             AlertDialog(
                 onDismissRequest = { showNoteDialog = false },
                 shape = RoundedCornerShape(28.dp),
-                title = { Text("Mesajınızı İletin", fontWeight = FontWeight.ExtraBold) },
+                title = { 
+                    Text(
+                        if (isReadOnly) "Hocaya Öneri Notu" else "Reddetme Gerekçesi",
+                        fontWeight = FontWeight.ExtraBold
+                    ) 
+                },
                 text = {
                     OutlinedTextField(
                         value = noteInput,
                         onValueChange = { noteInput = it },
-                        placeholder = { Text("Örn: Bu saatlerde başka bir dersim var...") },
+                        placeholder = { Text(if (isReadOnly) "Hocaya yeni program notunuz..." else "Hangi saatlerin değişmesi gerektiğini yazın...") },
                         modifier = Modifier.fillMaxWidth().height(140.dp),
                         shape = RoundedCornerShape(16.dp)
                     )
@@ -320,10 +296,11 @@ fun TeacherScheduleScreen(
                         onClick = {
                             if (isReadOnly) {
                                 if (isAdminEditing) viewModel.submitAdminProposal(noteInput)
-                                else viewModel.rejectTeacherRequest(noteInput)
+                                else viewModel.approveTeacherRequest(noteInput) // Fallback for legacy
                             } else {
-                                if (teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) viewModel.rejectAdminProposal(noteInput)
-                                else viewModel.sendTeacherRequest(noteInput)
+                                if (teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) {
+                                    viewModel.rejectAdminProposal(noteInput)
+                                }
                             }
                             showNoteDialog = false
                             noteInput = ""
@@ -337,12 +314,12 @@ fun TeacherScheduleScreen(
 }
 
 @Composable
-fun StatusBadge(status: ScheduleStatus) {
+fun StatusBadge(status: ScheduleStatus, isReadOnly: Boolean) {
     val (text, color) = when(status) {
         ScheduleStatus.PENDING -> "Onay Bekliyor" to WarningOrange
         ScheduleStatus.APPROVED -> "Onaylandı" to SuccessGreen
-        ScheduleStatus.REJECTED -> "Revize Gerekli" to ErrorRed
-        ScheduleStatus.ADMIN_PROPOSAL -> "Öneri Sunuldu" to PrimaryBlue
+        ScheduleStatus.REJECTED -> (if (isReadOnly) "Hoca Revize İstedi" else "Revize Gerekli") to ErrorRed
+        ScheduleStatus.ADMIN_PROPOSAL -> (if (isReadOnly) "Öneri Gönderildi" else "Yeni Öneri Var") to PrimaryBlue
     }
     Surface(
         color = color.copy(alpha = 0.15f),
