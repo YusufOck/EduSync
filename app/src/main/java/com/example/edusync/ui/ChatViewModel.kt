@@ -66,6 +66,13 @@ class ChatViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Dinamik Bildirim Sayacı (Badge)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val totalUnreadCount = _currentUserId.flatMapLatest { currentId ->
+        if (currentId == null) return@flatMapLatest flowOf(0)
+        chatRepository.getTotalUnreadCount(currentId)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     val messageableTeachers = combine(
         teacherRepository.getAllTeachers(),
         userRepository.getAllUsersFlow()

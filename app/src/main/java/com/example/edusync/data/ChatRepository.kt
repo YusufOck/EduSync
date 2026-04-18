@@ -5,6 +5,7 @@ import com.google.firebase.database.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -32,7 +33,6 @@ class ChatRepository @Inject constructor(
                 val list = snapshot.children.mapNotNull { it.getValue(Message::class.java)?.let { msg ->
                     msg.copy(content = SecurityUtils.decrypt(msg.content))
                 }}.filter { msg ->
-                    // Only show messages NOT deleted by the current user
                     if (msg.senderId == currentUserId) !msg.deletedBySender
                     else !msg.deletedByReceiver
                 }
@@ -54,9 +54,6 @@ class ChatRepository @Inject constructor(
         }
     }
 
-    /**
-     * Logical deletion for the current user only.
-     */
     suspend fun clearChatForUser(currentUserId: String, targetUserId: String) {
         val chatId = getChatId(currentUserId, targetUserId)
         val snapshot = messagesRef.child(chatId).get().await()
@@ -83,7 +80,6 @@ class ChatRepository @Inject constructor(
                 snapshot.children.forEach { chatSnapshot ->
                     val messages = chatSnapshot.children.mapNotNull { msgSnap ->
                         msgSnap.getValue(Message::class.java)?.let { msg ->
-                            // Admin only sees what hasn't been deleted by "admin"
                             val isDeletedByAdmin = (msg.senderId == "admin" && msg.deletedBySender) || 
                                                  (msg.receiverId == "admin" && msg.deletedByReceiver)
                             
@@ -97,6 +93,32 @@ class ChatRepository @Inject constructor(
                     }
                 }
                 trySend(allChats)
+            }
+            override fun onCancelled(error: DatabaseError) { close(error.toException()) }
+        }
+        messagesRef.addValueEventListener(listener)
+        awaitClose { messagesRef.removeEventListener(listener) }
+    }
+
+    /**
+     * Efficiently listen to all unread messages for a specific user across all chats.
+     */
+    fun getTotalUnreadCount(userId: String): Flow<Int> = callbackFlow {
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                var total = 0
+                snapshot.children.forEach { chatSnapshot ->
+                    chatSnapshot.children.forEach { msgSnapshot ->
+                        val msg = msgSnapshot.getValue(Message::class.java)
+                        if (msg != null && msg.receiverId == userId && !msg.isRead) {
+                            // Check if deleted logically
+                            if (!msg.deletedByReceiver) {
+                                total++
+                            }
+                        }
+                    }
+                }
+                trySend(total)
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }

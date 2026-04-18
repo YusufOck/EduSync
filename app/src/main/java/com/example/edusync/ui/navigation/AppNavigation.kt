@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -16,7 +17,9 @@ import com.example.edusync.data.UserRole
 import com.example.edusync.ui.*
 
 @Composable
-fun AppNavigation() {
+fun AppNavigation(
+    chatViewModel: ChatViewModel = hiltViewModel()
+) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
@@ -24,6 +27,16 @@ fun AppNavigation() {
     var currentUserRole by remember { mutableStateOf<UserRole?>(null) }
     var currentUsername by remember { mutableStateOf<String?>(null) }
     var loggedInTeacherId by remember { mutableStateOf<Int?>(null) }
+
+    val totalUnreadCount by chatViewModel.totalUnreadCount.collectAsState()
+
+    LaunchedEffect(currentUsername, currentUserRole) {
+        if (currentUserRole == UserRole.ADMIN) {
+            chatViewModel.initUser("admin")
+        } else if (currentUsername != null) {
+            chatViewModel.initUser(currentUsername!!)
+        }
+    }
 
     val showAdminBar = currentUserRole == UserRole.ADMIN && currentDestination?.route != Screen.Login.route
     val showTeacherBar = currentUserRole == UserRole.TEACHER && currentDestination?.route != Screen.Login.route
@@ -35,7 +48,17 @@ fun AppNavigation() {
                     adminBottomNavItems.forEach { screen ->
                         val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
                         NavigationBarItem(
-                            icon = { Icon(screen.icon, contentDescription = screen.title) },
+                            icon = { 
+                                BadgedBox(
+                                    badge = {
+                                        if (screen == Screen.AdminMessages && totalUnreadCount > 0) {
+                                            Badge { Text(totalUnreadCount.toString()) }
+                                        }
+                                    }
+                                ) {
+                                    Icon(screen.icon, contentDescription = screen.title)
+                                }
+                            },
                             label = { Text(screen.title) },
                             selected = isSelected,
                             onClick = {
@@ -63,7 +86,17 @@ fun AppNavigation() {
                                 (screen is Screen.TeacherSchedule && currentDestination?.route?.startsWith("teacher_schedule") == true)
 
                         NavigationBarItem(
-                            icon = { Icon(screen.icon, contentDescription = screen.title) },
+                            icon = { 
+                                BadgedBox(
+                                    badge = {
+                                        if (screen == Screen.TeacherMessages && totalUnreadCount > 0) {
+                                            Badge { Text(totalUnreadCount.toString()) }
+                                        }
+                                    }
+                                ) {
+                                    Icon(screen.icon, contentDescription = screen.title)
+                                }
+                            },
                             label = { Text(screen.title) },
                             selected = isSelected,
                             onClick = {
@@ -179,7 +212,7 @@ fun AppNavigation() {
             ) { backStackEntry ->
                 val targetUserId = backStackEntry.arguments?.getString("targetUserId") ?: ""
                 ChatDetailScreen(
-                    currentUserId = "admin",
+                    currentUserId = if (currentUserRole == UserRole.ADMIN) "admin" else (currentUsername ?: ""),
                     targetUserId = targetUserId,
                     onNavigateBack = { navController.popBackStack() }
                 )

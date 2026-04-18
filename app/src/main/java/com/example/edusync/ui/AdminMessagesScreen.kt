@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -20,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.edusync.data.ChatSummary
+import com.example.edusync.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -39,27 +41,38 @@ fun AdminMessagesScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Sohbetler") })
+            TopAppBar(
+                title = { Text("Mesaj Kutusu", fontWeight = FontWeight.Bold) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = PrimaryBlue
+                )
+            )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showNewChatDialog = true }) {
+            FloatingActionButton(
+                onClick = { showNewChatDialog = true },
+                containerColor = PrimaryBlue,
+                contentColor = Color.White,
+                shape = CircleShape
+            ) {
                 Icon(Icons.Default.Add, contentDescription = "Yeni Sohbet")
             }
         }
     ) { padding ->
         if (chatSummaries.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding).background(BackgroundLight), contentAlignment = Alignment.Center) {
                 Text("Henüz mesaj yok.", color = Color.Gray)
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).background(BackgroundLight)) {
                 items(chatSummaries) { summary ->
                     ChatSummaryItem(
                         summary = summary,
                         onClick = { onChatClick(summary.otherUserId) },
                         onDelete = { viewModel.deleteChat(summary.otherUserId) }
                     )
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp)
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.3f))
                 }
             }
         }
@@ -88,17 +101,18 @@ fun ChatSummaryItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(Color.White)
             .clickable(onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
-            modifier = Modifier.size(50.dp),
+            modifier = Modifier.size(54.dp),
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer
+            color = LightBlue
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Person, null, modifier = Modifier.size(30.dp))
+                Icon(Icons.Default.Person, null, modifier = Modifier.size(30.dp), tint = PrimaryBlue)
             }
         }
         
@@ -110,12 +124,13 @@ fun ChatSummaryItem(
                     text = summary.otherUserName,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
+                    color = TextDark,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
                     text = timeFormat.format(Date(summary.lastMessageTimestamp)),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
+                    color = TextLight
                 )
             }
             
@@ -124,27 +139,28 @@ fun ChatSummaryItem(
                     text = summary.lastMessage,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
-                    color = if (summary.unreadCount > 0) MaterialTheme.colorScheme.onSurface else Color.Gray,
+                    color = if (summary.unreadCount > 0) TextDark else TextLight,
                     fontWeight = if (summary.unreadCount > 0) FontWeight.Bold else FontWeight.Normal,
                     modifier = Modifier.weight(1f)
                 )
                 if (summary.unreadCount > 0) {
                     Box(
                         modifier = Modifier
-                            .size(20.dp)
-                            .background(MaterialTheme.colorScheme.primary, CircleShape),
+                            .padding(start = 8.dp)
+                            .size(22.dp)
+                            .background(PrimaryBlue, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = summary.unreadCount.toString(),
                             color = Color.White,
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, null, tint = Color.LightGray, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Delete, null, tint = Color.LightGray.copy(alpha = 0.6f), modifier = Modifier.size(20.dp))
                 }
             }
         }
@@ -159,27 +175,35 @@ fun NewChatDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Mesaj Gönderilecek Hoca") },
+        shape = RoundedCornerShape(24.dp),
+        containerColor = Color.White,
+        title = { Text("Mesaj Gönderilecek Hoca", color = PrimaryBlue, fontWeight = FontWeight.Bold) },
         text = {
             LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                 items(teachers) { (username, fullName) ->
-                    TextButton(
-                        onClick = { onTeacherSelected(username) },
-                        modifier = Modifier.fillMaxWidth()
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable { onTeacherSelected(username) },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = BackgroundLight)
                     ) {
-                        Text(
-                            text = fullName,
-                            modifier = Modifier.fillMaxWidth(),
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Start
-                        )
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Person, null, tint = PrimaryBlue, modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text(text = fullName, fontWeight = FontWeight.Medium, color = TextDark)
+                        }
                     }
                 }
             }
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("İptal") }
+            TextButton(onClick = onDismiss) { Text("İPTAL", color = Color.Gray) }
         }
     )
 }

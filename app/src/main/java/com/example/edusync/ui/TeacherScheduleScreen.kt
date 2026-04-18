@@ -64,7 +64,12 @@ fun TeacherScheduleScreen(
                             fontWeight = FontWeight.Bold,
                             color = PrimaryBlue
                         )
-                        teacher?.let { StatusBadge(it.scheduleStatus, isReadOnly) }
+                        teacher?.let { 
+                            // Hoca ekranında sadece Admin Önerisi varsa Badge göster, Revize Gerekli vs gösterme
+                            if (isReadOnly || it.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) {
+                                StatusBadge(it.scheduleStatus, isReadOnly)
+                            }
+                        }
                     }
                 },
                 navigationIcon = {
@@ -119,27 +124,6 @@ fun TeacherScheduleScreen(
                             ) {
                                 Text("İPTAL")
                             }
-                        } else if (teacher?.scheduleStatus == ScheduleStatus.PENDING) {
-                            Button(
-                                onClick = { viewModel.approveTeacherRequest("Talebiniz kabul edildi.") },
-                                modifier = Modifier.weight(1f).height(54.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
-                                shape = RoundedCornerShape(16.dp)
-                            ) {
-                                Icon(Icons.Default.Check, null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("ONAYLA")
-                            }
-                            Button(
-                                onClick = { showNoteDialog = true },
-                                modifier = Modifier.weight(1f).height(54.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
-                                shape = RoundedCornerShape(16.dp)
-                            ) {
-                                Icon(Icons.Default.Close, null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("REDDET")
-                            }
                         }
                     }
                 } else {
@@ -180,11 +164,11 @@ fun TeacherScheduleScreen(
         ) {
             // Logic for showing notes
             val msgToShow = if (isReadOnly) {
-                // Admin sees what teacher wrote when rejecting OR if there's a legacy pending
-                if (teacher?.scheduleStatus == ScheduleStatus.REJECTED || teacher?.scheduleStatus == ScheduleStatus.PENDING) teacher?.teacherNote else ""
+                // Admin sees the teacher's latest rejection reason
+                if (teacher?.scheduleStatus == ScheduleStatus.REJECTED) teacher?.teacherNote else ""
             } else {
-                // Teacher sees admin's note for proposal
-                if (teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL || teacher?.scheduleStatus == ScheduleStatus.REJECTED) teacher?.adminNote else ""
+                // Teacher sees the admin's latest proposal note
+                if (teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) teacher?.adminNote else ""
             }
 
             AnimatedVisibility(visible = !msgToShow.isNullOrEmpty()) {
@@ -295,12 +279,9 @@ fun TeacherScheduleScreen(
                     Button(
                         onClick = {
                             if (isReadOnly) {
-                                if (isAdminEditing) viewModel.submitAdminProposal(noteInput)
-                                else viewModel.approveTeacherRequest(noteInput) // Fallback for legacy
+                                viewModel.submitAdminProposal(noteInput)
                             } else {
-                                if (teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) {
-                                    viewModel.rejectAdminProposal(noteInput)
-                                }
+                                viewModel.rejectAdminProposal(noteInput)
                             }
                             showNoteDialog = false
                             noteInput = ""
