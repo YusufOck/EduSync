@@ -1,20 +1,3 @@
 package com.example.edusync.data
 
-import androidx.room.Database
-import androidx.room.RoomDatabase
-
-@Database(
-    entities = [
-        Teacher::class, 
-        TeacherAvailability::class, 
-        User::class, 
-        VerificationCode::class,
-        Course::class
-    ], 
-    version = 6, // VERSION YÜKSELTİLDİ
-    exportSchema = false
-)
-abstract class EduSyncDatabase : RoomDatabase() {
-    abstract fun teacherDao(): TeacherDao
-    abstract fun userDao(): UserDao
-}
+// Room is removed for Phase 2 Cloud Sync.

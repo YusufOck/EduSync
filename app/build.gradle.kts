@@ -59,7 +59,7 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
-    // Firebase (Asynchronous Shared Memory)
+    // Firebase (Shared Cloud Memory - Asynchronous)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.database)
     implementation(libs.firebase.auth)
@@ -69,9 +69,11 @@ dependencies {
     implementation(libs.poi)
     implementation(libs.poi.ooxml)
 
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
+    // Room is removed to ensure full Phase 2 Cloud Sync
+    // implementation(libs.androidx.room.runtime)
+    // implementation(libs.androidx.room.ktx)
+    // ksp(libs.androidx.room.compiler)
+
     implementation(libs.androidx.datastore.preferences)
 
     testImplementation(libs.junit)
