@@ -22,6 +22,7 @@ fun AppNavigation() {
     val currentDestination = navBackStackEntry?.destination
 
     var currentUserRole by remember { mutableStateOf<UserRole?>(null) }
+    var currentUsername by remember { mutableStateOf<String?>(null) }
     var loggedInTeacherId by remember { mutableStateOf<Int?>(null) }
 
     val showAdminBar = currentUserRole == UserRole.ADMIN && currentDestination?.route != Screen.Login.route
@@ -87,8 +88,9 @@ fun AppNavigation() {
         ) {
             composable(Screen.Login.route) {
                 LoginScreen(
-                    onLoginSuccess = { role, teacherId ->
+                    onLoginSuccess = { role, teacherId, username ->
                         currentUserRole = role
+                        currentUsername = username
                         if (role == UserRole.ADMIN) {
                             navController.navigate(Screen.AdminDashboard.route) {
                                 popUpTo(Screen.Login.route) { inclusive = true }
@@ -117,6 +119,7 @@ fun AppNavigation() {
                     onLogout = if (currentUserRole == UserRole.TEACHER) {
                         {
                             currentUserRole = null
+                            currentUsername = null
                             loggedInTeacherId = null
                             navController.navigate(Screen.Login.route) { popUpTo(0) { inclusive = true } }
                         }
@@ -124,10 +127,19 @@ fun AppNavigation() {
                 )
             }
 
+            composable(Screen.TeacherMessages.route) {
+                ChatDetailScreen(
+                    currentUserId = currentUsername ?: "",
+                    targetUserId = "admin",
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
             composable(Screen.TeacherSettings.route) {
                 TeacherSettingsScreen(
                     onLogout = {
                         currentUserRole = null
+                        currentUsername = null
                         loggedInTeacherId = null
                         navController.navigate(Screen.Login.route) { popUpTo(0) { inclusive = true } }
                     }
@@ -138,6 +150,7 @@ fun AppNavigation() {
                 AdminDashboardScreen(
                     onLogout = {
                         currentUserRole = null
+                        currentUsername = null
                         navController.navigate(Screen.Login.route) { popUpTo(0) { inclusive = true } }
                     }
                 )
@@ -145,10 +158,30 @@ fun AppNavigation() {
 
             composable(Screen.TeacherManagement.route) {
                 TeacherManagementScreen(
-                    onNavigateBack = { navController.popBackStack(); Unit }, // Unit eklendi, hata giderildi.
+                    onNavigateBack = { navController.popBackStack(); Unit },
                     onTeacherClick = { teacherId ->
                         navController.navigate(Screen.TeacherSchedule.createRoute(teacherId))
                     }
+                )
+            }
+
+            composable(Screen.AdminMessages.route) {
+                AdminMessagesScreen(
+                    onChatClick = { targetUserId ->
+                        navController.navigate(Screen.ChatDetail.createRoute(targetUserId))
+                    }
+                )
+            }
+
+            composable(
+                route = Screen.ChatDetail.route,
+                arguments = listOf(navArgument("targetUserId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val targetUserId = backStackEntry.arguments?.getString("targetUserId") ?: ""
+                ChatDetailScreen(
+                    currentUserId = "admin",
+                    targetUserId = targetUserId,
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
 

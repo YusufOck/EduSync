@@ -1,13 +1,7 @@
 package com.example.edusync.ui.navigation
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AdminPanelSettings
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material.icons.filled.Login
-import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
@@ -18,22 +12,31 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object TeacherManagement : Screen("teacher_management", "Hocalar", Icons.Default.People)
     object VerificationCodes : Screen("verification_codes", "Kodlar", Icons.Default.VpnKey)
     object ExcelImport : Screen("excel_import", "Excel Aktar", Icons.Default.FileUpload)
+    object AdminMessages : Screen("admin_messages", "Mesajlar", Icons.Default.Chat)
     
     // Teacher Screens
     object TeacherSchedule : Screen("teacher_schedule/{teacherId}", "Program", Icons.Default.CalendarMonth) {
         fun createRoute(teacherId: Int) = "teacher_schedule/$teacherId"
     }
+    object TeacherMessages : Screen("teacher_messages", "Mesajlar", Icons.Default.Chat)
     object TeacherSettings : Screen("teacher_settings", "Ayarlar", Icons.Default.Settings)
+
+    // Common
+    object ChatDetail : Screen("chat_detail/{targetUserId}", "Sohbet", Icons.Default.Chat) {
+        fun createRoute(targetUserId: String) = "chat_detail/$targetUserId"
+    }
 }
 
 val adminBottomNavItems = listOf(
     Screen.AdminDashboard,
     Screen.TeacherManagement,
+    Screen.AdminMessages,
     Screen.VerificationCodes,
     Screen.ExcelImport
 )
 
 val teacherBottomNavItems = listOf(
-    Screen.TeacherSchedule, // Not: teacherId parametresi yüzünden navigasyon zorlaşabilir, yönetilmeli
+    Screen.TeacherSchedule,
+    Screen.TeacherMessages,
     Screen.TeacherSettings
 )

@@ -59,7 +59,7 @@ fun TeacherScheduleScreen(
                                 ScheduleStatus.PENDING -> "Admin Onayı Bekliyor"
                                 ScheduleStatus.APPROVED -> "Onaylandı"
                                 ScheduleStatus.REJECTED -> "Revize İsteniyor"
-                                ScheduleStatus.ADMIN_PROPOSAL -> "Öneri Sunuldu"
+                                ScheduleStatus.ADMIN_PROPOSAL -> "Admin Öneri Sundu"
                             }
                             Text("Durum: $statusText", style = MaterialTheme.typography.bodySmall)
                         }

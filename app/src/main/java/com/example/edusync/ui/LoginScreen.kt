@@ -15,7 +15,7 @@ import com.example.edusync.data.UserRole
 
 @Composable
 fun LoginScreen(
-    onLoginSuccess: (UserRole, Int?) -> Unit,
+    onLoginSuccess: (UserRole, Int?, String) -> Unit,
     viewModel: LoginViewModel = hiltViewModel()
 ) {
     var isRegisterMode by remember { mutableStateOf(false) }
@@ -31,7 +31,7 @@ fun LoginScreen(
         val currentState = loginState
         if (currentState is LoginResult.Success) {
             val user = currentState.user
-            onLoginSuccess(user.role, user.teacherId)
+            onLoginSuccess(user.role, user.teacherId, user.username)
             viewModel.resetState()
         } else if (currentState is LoginResult.RegisterSuccess) {
             isRegisterMode = false
