@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,11 +39,11 @@ fun TeacherScheduleScreen(
     val teacher by viewModel.currentTeacher.collectAsState()
     val availability by viewModel.availabilityMatrix.collectAsState()
     val courses by viewModel.teacherCourses.collectAsState()
+    val isAdminEditing by viewModel.isAdminEditing.collectAsState()
+    val isTeacherEditing by viewModel.isTeacherEditing.collectAsState()
 
-    var isAdminEditing by remember { mutableStateOf(false) }
-    var hasAdminMadeChanges by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
-    var adminNote by remember { mutableStateOf("") }
+    var noteInput by remember { mutableStateOf("") }
 
     val days = listOf("Pzt", "Sal", "Çar", "Per", "Cum")
     val timeSlots = listOf("08:30", "09:30", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "16:30")
@@ -55,10 +56,10 @@ fun TeacherScheduleScreen(
                         Text(teacher?.let { "${it.title} ${it.name} ${it.surname}" } ?: "Yükleniyor...")
                         teacher?.let { 
                             val statusText = when(it.scheduleStatus) {
-                                ScheduleStatus.PENDING -> "Onay Bekliyor"
+                                ScheduleStatus.PENDING -> "Admin Onayı Bekliyor"
                                 ScheduleStatus.APPROVED -> "Onaylandı"
-                                ScheduleStatus.REJECTED -> "Reddedildi"
-                                ScheduleStatus.ADMIN_PROPOSAL -> "Admin Önerisi Bekliyor"
+                                ScheduleStatus.REJECTED -> "Revize İsteniyor"
+                                ScheduleStatus.ADMIN_PROPOSAL -> "Öneri Sunuldu"
                             }
                             Text("Durum: $statusText", style = MaterialTheme.typography.bodySmall)
                         }
@@ -73,15 +74,29 @@ fun TeacherScheduleScreen(
                 },
                 actions = {
                     if (isReadOnly) {
+                        // ADMIN EDIT TOGGLE
                         IconButton(onClick = { 
-                            isAdminEditing = !isAdminEditing 
-                            if (!isAdminEditing) hasAdminMadeChanges = false 
+                            if (isAdminEditing) viewModel.cancelAdminEdit() else viewModel.startAdminEdit()
                         }) {
                             Icon(
                                 if (isAdminEditing) Icons.Default.EditOff else Icons.Default.Edit, 
                                 contentDescription = "Düzenle",
                                 tint = if (isAdminEditing) MaterialTheme.colorScheme.primary else LocalContentColor.current
                             )
+                        }
+                    } else {
+                        // TEACHER EDIT TOGGLE
+                        val status = teacher?.scheduleStatus
+                        if (status != ScheduleStatus.PENDING && status != ScheduleStatus.ADMIN_PROPOSAL) {
+                            IconButton(onClick = { 
+                                if (isTeacherEditing) viewModel.cancelTeacherEdit() else viewModel.startTeacherEdit()
+                            }) {
+                                Icon(
+                                    if (isTeacherEditing) Icons.Default.EditOff else Icons.Default.Edit, 
+                                    contentDescription = "Düzenle",
+                                    tint = if (isTeacherEditing) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                                )
+                            }
                         }
                     }
                     if (onLogout != null) {
@@ -94,25 +109,21 @@ fun TeacherScheduleScreen(
         },
         bottomBar = {
             if (isReadOnly) {
-                // Admin Panelinde
+                // --- ADMIN BOTTOM BAR ---
                 BottomAppBar {
                     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (isAdminEditing && hasAdminMadeChanges) {
-                            Button(
-                                onClick = { 
-                                    viewModel.updateScheduleStatus(ScheduleStatus.ADMIN_PROPOSAL)
-                                    isAdminEditing = false
-                                    hasAdminMadeChanges = false
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Default.Send, null)
+                        if (isAdminEditing) {
+                            Button(onClick = { showNoteDialog = true }, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.AutoMirrored.Filled.Send, null)
                                 Spacer(Modifier.width(4.dp))
                                 Text("HOCAYA SUN")
                             }
+                            OutlinedButton(onClick = { viewModel.cancelAdminEdit() }, modifier = Modifier.weight(1f)) {
+                                Text("VAZGEÇ")
+                            }
                         } else if (teacher?.scheduleStatus == ScheduleStatus.PENDING) {
                             Button(
-                                onClick = { viewModel.updateScheduleStatus(ScheduleStatus.APPROVED) },
+                                onClick = { viewModel.approveTeacherRequest("Admin isteğinizi onayladı.") },
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                             ) {
@@ -133,42 +144,49 @@ fun TeacherScheduleScreen(
                     }
                 }
             } else {
-                // Hoca Panelinde
+                // --- TEACHER BOTTOM BAR ---
                 val status = teacher?.scheduleStatus
                 BottomAppBar {
                     if (status == ScheduleStatus.ADMIN_PROPOSAL) {
                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
-                                onClick = { viewModel.updateScheduleStatus(ScheduleStatus.APPROVED) },
+                                onClick = { viewModel.approveAdminProposal() },
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                             ) {
+                                Icon(Icons.Default.Check, null)
+                                Spacer(Modifier.width(4.dp))
                                 Text("ÖNERİYİ ONAYLA")
                             }
                             Button(
-                                onClick = { viewModel.updateScheduleStatus(ScheduleStatus.REJECTED, "Admin önerisini kabul etmedi.") },
+                                onClick = { showNoteDialog = true },
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                             ) {
+                                Icon(Icons.Default.Close, null)
+                                Spacer(Modifier.width(4.dp))
                                 Text("REDDET")
                             }
                         }
-                    } else if (status == ScheduleStatus.REJECTED || status == ScheduleStatus.PENDING) {
-                        Button(
-                            onClick = { viewModel.updateScheduleStatus(ScheduleStatus.PENDING) },
-                            modifier = Modifier.fillMaxWidth().padding(8.dp)
-                        ) {
-                            Icon(Icons.Default.Send, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("ADMİNE GÖNDER")
+                    } else if (isTeacherEditing) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { showNoteDialog = true }, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.AutoMirrored.Filled.Send, null)
+                                Spacer(Modifier.width(4.dp))
+                                Text("ADMİNE GÖNDER")
+                            }
+                            OutlinedButton(onClick = { viewModel.cancelTeacherEdit() }, modifier = Modifier.weight(1f)) {
+                                Text("VAZGEÇ")
+                            }
                         }
-                    } else if (status == ScheduleStatus.APPROVED) {
-                        Button(
-                            onClick = { viewModel.updateScheduleStatus(ScheduleStatus.REJECTED, "Hoca yeni değişiklik talep etti.") },
-                            modifier = Modifier.fillMaxWidth().padding(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                        ) {
-                            Text("YENİ DEĞİŞİKLİK İSTE")
+                    } else {
+                        // Normal view mode for teacher
+                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = if (status == ScheduleStatus.PENDING) "İsteğiniz Admin onayında..." else "Düzenlemek için kalem ikonuna tıklayın",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Gray
+                            )
                         }
                     }
                 }
@@ -177,18 +195,31 @@ fun TeacherScheduleScreen(
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             
-            if (!isReadOnly && teacher?.adminNote?.isNotEmpty() == true) {
+            // --- DYNAMIC MESSAGE BOX ---
+            val messageToShow = if (isReadOnly) {
+                // Admin ekranında hocanın notu varsa göster (PENDING ise)
+                if (teacher?.scheduleStatus == ScheduleStatus.PENDING && !teacher?.teacherNote.isNullOrEmpty()) teacher?.teacherNote else ""
+            } else {
+                // Hoca ekranında adminin notu varsa göster (REJECTED veya PROPOSAL ise)
+                if ((teacher?.scheduleStatus == ScheduleStatus.REJECTED || teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) 
+                    && !teacher?.adminNote.isNullOrEmpty()) teacher?.adminNote else ""
+            }
+
+            if (!messageToShow.isNullOrEmpty()) {
                 Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
                     modifier = Modifier.fillMaxWidth().padding(8.dp),
                     shape = MaterialTheme.shapes.small
                 ) {
-                    Text(
-                        "Bilgi: ${teacher?.adminNote}",
-                        modifier = Modifier.padding(8.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
+                    Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isReadOnly) "Hoca Notu: $messageToShow" else "Admin Mesajı: $messageToShow",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
                 }
             }
 
@@ -206,7 +237,7 @@ fun TeacherScheduleScreen(
                 days.forEach { Text(it, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontWeight = FontWeight.Bold) }
             }
 
-            val canEdit = (!isReadOnly && (teacher?.scheduleStatus == ScheduleStatus.REJECTED || teacher?.scheduleStatus == ScheduleStatus.PENDING)) || isAdminEditing
+            val isInteractionEnabled = isAdminEditing || isTeacherEditing
             
             LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                 itemsIndexed(timeSlots) { slotIndex, time ->
@@ -224,9 +255,8 @@ fun TeacherScheduleScreen(
                                         else -> Color(0xFF66BB6A)
                                     })
                                     .border(0.5.dp, Color.LightGray)
-                                    .clickable(enabled = !isLunch && canEdit) {
+                                    .clickable(enabled = !isLunch && isInteractionEnabled) {
                                         viewModel.toggleAvailability(dayIndex, slotIndex)
-                                        if (isReadOnly && isAdminEditing) hasAdminMadeChanges = true
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -241,20 +271,37 @@ fun TeacherScheduleScreen(
         if (showNoteDialog) {
             AlertDialog(
                 onDismissRequest = { showNoteDialog = false },
-                title = { Text("Reddetme Sebebi") },
+                title = { 
+                    Text(when {
+                        isReadOnly && isAdminEditing -> "Hocaya İletilecek Mesaj"
+                        isReadOnly -> "Reddetme Sebebi"
+                        teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL -> "Reddetme Sebebi"
+                        else -> "Admin'e İletilecek Not"
+                    }) 
+                },
                 text = {
                     OutlinedTextField(
-                        value = adminNote,
-                        onValueChange = { adminNote = it },
-                        label = { Text("Hocaya mesajınız...") },
+                        value = noteInput,
+                        onValueChange = { noteInput = it },
+                        placeholder = { Text("Buraya yazın...") },
                         modifier = Modifier.fillMaxWidth()
                     )
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        viewModel.updateScheduleStatus(ScheduleStatus.REJECTED, adminNote)
+                        if (isReadOnly) {
+                            if (isAdminEditing) viewModel.submitAdminProposal(noteInput)
+                            else viewModel.rejectTeacherRequest(noteInput)
+                        } else {
+                            if (teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) viewModel.rejectAdminProposal(noteInput)
+                            else viewModel.sendTeacherRequest(noteInput)
+                        }
                         showNoteDialog = false
+                        noteInput = ""
                     }) { Text("GÖNDER") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showNoteDialog = false }) { Text("İPTAL") }
                 }
             )
         }

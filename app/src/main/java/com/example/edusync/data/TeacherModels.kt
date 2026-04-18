@@ -21,7 +21,8 @@ data class Teacher(
     var department: String = "",
     var title: String = "",
     var scheduleStatus: ScheduleStatus = ScheduleStatus.APPROVED,
-    var adminNote: String = ""
+    var adminNote: String = "",
+    var teacherNote: String = "" // Added to separate messages
 )
 
 data class TeacherAvailability(

@@ -18,10 +18,8 @@ class TeacherRepository @Inject constructor(
     private val teachersRef = database.getReference("teachers")
     private val coursesRef = database.getReference("courses")
     private val availabilityRef = database.getReference("availability")
+    private val proposalsRef = database.getReference("proposals")
 
-    /**
-     * ASYNC READ: Firebase'den gelen şifreli verileri asenkron deşifre eder (AES Decrypt).
-     */
     fun getAllTeachers(): Flow<List<Teacher>> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
@@ -31,7 +29,8 @@ class TeacherRepository @Inject constructor(
                         surname = SecurityUtils.decrypt(t.surname),
                         department = SecurityUtils.decrypt(t.department),
                         title = SecurityUtils.decrypt(t.title),
-                        adminNote = SecurityUtils.decrypt(t.adminNote)
+                        adminNote = SecurityUtils.decrypt(t.adminNote),
+                        teacherNote = SecurityUtils.decrypt(t.teacherNote)
                     )
                 }}
                 trySend(list)
@@ -62,7 +61,8 @@ class TeacherRepository @Inject constructor(
             surname = SecurityUtils.encrypt(teacher.surname),
             department = SecurityUtils.encrypt(teacher.department),
             title = SecurityUtils.encrypt(teacher.title),
-            adminNote = SecurityUtils.encrypt(teacher.adminNote)
+            adminNote = SecurityUtils.encrypt(teacher.adminNote),
+            teacherNote = SecurityUtils.encrypt(teacher.teacherNote)
         )
         targetRef.setValue(encryptedTeacher).await()
         return id.toLong()
@@ -74,14 +74,26 @@ class TeacherRepository @Inject constructor(
             surname = SecurityUtils.encrypt(teacher.surname),
             department = SecurityUtils.encrypt(teacher.department),
             title = SecurityUtils.encrypt(teacher.title),
-            adminNote = SecurityUtils.encrypt(teacher.adminNote)
+            adminNote = SecurityUtils.encrypt(teacher.adminNote),
+            teacherNote = SecurityUtils.encrypt(teacher.teacherNote)
         )
         teachersRef.child(teacher.id.toString()).setValue(encrypted).await()
+    }
+
+    suspend fun updateScheduleStatus(teacherId: Int, status: ScheduleStatus, adminNote: String = "", teacherNote: String = "") {
+        val updates = mutableMapOf<String, Any>(
+            "scheduleStatus" to status.name
+        )
+        if (adminNote.isNotEmpty()) updates["adminNote"] = SecurityUtils.encrypt(adminNote)
+        if (teacherNote.isNotEmpty()) updates["teacherNote"] = SecurityUtils.encrypt(teacherNote)
+
+        teachersRef.child(teacherId.toString()).updateChildren(updates).await()
     }
 
     suspend fun deleteTeacher(teacher: Teacher) {
         teachersRef.child(teacher.id.toString()).removeValue().await()
         availabilityRef.child(teacher.id.toString()).removeValue().await()
+        proposalsRef.child(teacher.id.toString()).removeValue().await()
     }
 
     fun getAvailability(teacherId: Int): Flow<List<TeacherAvailability>> = callbackFlow {
@@ -100,6 +112,42 @@ class TeacherRepository @Inject constructor(
         val key = "${availability.dayIndex}_${availability.slotIndex}"
         availabilityRef.child(availability.teacherId.toString()).child(key).setValue(availability).await()
     }
+
+    // --- Proposal Methods ---
+
+    fun getProposal(teacherId: Int): Flow<List<TeacherAvailability>> = callbackFlow {
+        val ref = proposalsRef.child(teacherId.toString())
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                trySend(snapshot.children.mapNotNull { it.getValue(TeacherAvailability::class.java) })
+            }
+            override fun onCancelled(error: DatabaseError) { close(error.toException()) }
+        }
+        ref.addValueEventListener(listener)
+        awaitClose { ref.removeEventListener(listener) }
+    }
+
+    suspend fun updateProposal(availability: TeacherAvailability) {
+        val key = "${availability.dayIndex}_${availability.slotIndex}"
+        proposalsRef.child(availability.teacherId.toString()).child(key).setValue(availability).await()
+    }
+
+    suspend fun copyAvailabilityToProposal(teacherId: Int) {
+        val snapshot = availabilityRef.child(teacherId.toString()).get().await()
+        proposalsRef.child(teacherId.toString()).setValue(snapshot.value).await()
+    }
+
+    suspend fun applyProposal(teacherId: Int) {
+        val snapshot = proposalsRef.child(teacherId.toString()).get().await()
+        availabilityRef.child(teacherId.toString()).setValue(snapshot.value).await()
+        proposalsRef.child(teacherId.toString()).removeValue().await()
+    }
+
+    suspend fun discardProposal(teacherId: Int) {
+        proposalsRef.child(teacherId.toString()).removeValue().await()
+    }
+
+    // --- Course Methods ---
 
     suspend fun insertCourse(course: Course) {
         val encryptedCourse = course.copy(name = SecurityUtils.encrypt(course.name))

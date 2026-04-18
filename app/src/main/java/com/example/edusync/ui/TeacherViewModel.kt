@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.edusync.data.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -16,20 +17,39 @@ class TeacherViewModel @Inject constructor(
     private val _selectedTeacherId = MutableStateFlow<Int?>(null)
     val selectedTeacherId = _selectedTeacherId.asStateFlow()
 
+    private val _isAdminEditing = MutableStateFlow(false)
+    val isAdminEditing = _isAdminEditing.asStateFlow()
+
+    private val _isTeacherEditing = MutableStateFlow(false)
+    val isTeacherEditing = _isTeacherEditing.asStateFlow()
+
     val teachers = repository.getAllTeachers().stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     val currentTeacher = _selectedTeacherId.flatMapLatest { id ->
         if (id == null) flowOf(null)
         else repository.getAllTeachers().map { list -> list.find { it.id == id } }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    val availabilityMatrix = _selectedTeacherId.flatMapLatest { id ->
-        if (id == null) flowOf(emptyList<TeacherAvailability>())
-        else repository.getAvailability(id)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val availabilityMatrix = combine(_selectedTeacherId, currentTeacher, _isAdminEditing, _isTeacherEditing) { id, teacher, adminEditing, teacherEditing ->
+        DataQueryState(id, teacher, adminEditing || teacherEditing)
+    }.flatMapLatest { state ->
+        val id = state.id ?: return@flatMapLatest flowOf(emptyList<TeacherAvailability>())
+        
+        // Use proposals buffer if editing OR if there is a pending decision
+        if (state.isEditing || 
+            state.teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL || 
+            state.teacher?.scheduleStatus == ScheduleStatus.PENDING) {
+            repository.getProposal(id)
+        } else {
+            repository.getAvailability(id)
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     val teacherCourses = _selectedTeacherId.flatMapLatest { id ->
         if (id == null) flowOf(emptyList<Course>())
         else repository.getCoursesByTeacher(id)
@@ -37,6 +57,114 @@ class TeacherViewModel @Inject constructor(
 
     fun selectTeacher(id: Int) {
         _selectedTeacherId.value = id
+    }
+
+    // --- Admin Actions ---
+
+    fun startAdminEdit() {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.copyAvailabilityToProposal(id)
+            _isAdminEditing.value = true
+        }
+    }
+
+    fun cancelAdminEdit() {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.discardProposal(id)
+            _isAdminEditing.value = false
+        }
+    }
+
+    fun submitAdminProposal(note: String) {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.updateScheduleStatus(id, ScheduleStatus.ADMIN_PROPOSAL, adminNote = note, teacherNote = "")
+            _isAdminEditing.value = false
+        }
+    }
+
+    fun approveTeacherRequest(note: String = "") {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.applyProposal(id) // Move teacher's changes to main availability
+            repository.updateScheduleStatus(id, ScheduleStatus.APPROVED, adminNote = note, teacherNote = "")
+        }
+    }
+
+    fun rejectTeacherRequest(note: String) {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.discardProposal(id) // Clear teacher's requested changes
+            repository.updateScheduleStatus(id, ScheduleStatus.REJECTED, adminNote = note)
+        }
+    }
+
+    // --- Teacher Actions ---
+
+    fun startTeacherEdit() {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.copyAvailabilityToProposal(id)
+            _isTeacherEditing.value = true
+        }
+    }
+
+    fun cancelTeacherEdit() {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.discardProposal(id)
+            _isTeacherEditing.value = false
+        }
+    }
+
+    fun sendTeacherRequest(note: String) {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.updateScheduleStatus(id, ScheduleStatus.PENDING, teacherNote = note)
+            _isTeacherEditing.value = false
+        }
+    }
+
+    fun approveAdminProposal() {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.applyProposal(id)
+            repository.updateScheduleStatus(id, ScheduleStatus.APPROVED, adminNote = "Öneriniz kabul edildi.", teacherNote = "")
+        }
+    }
+
+    fun rejectAdminProposal(note: String) {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.discardProposal(id)
+            repository.updateScheduleStatus(id, ScheduleStatus.REJECTED, teacherNote = note)
+        }
+    }
+
+    // --- Common ---
+
+    fun toggleAvailability(dayIndex: Int, slotIndex: Int) {
+        if (slotIndex == 4) return
+        val teacherId = _selectedTeacherId.value ?: return
+        val currentStatus = availabilityMatrix.value.find { 
+            it.dayIndex == dayIndex && it.slotIndex == slotIndex 
+        }
+        val newBusy = !(currentStatus?.isBusy ?: false)
+        
+        viewModelScope.launch {
+            val availability = TeacherAvailability(
+                teacherId = teacherId,
+                dayIndex = dayIndex,
+                slotIndex = slotIndex,
+                isBusy = newBusy
+            )
+            
+            if (_isAdminEditing.value || _isTeacherEditing.value) {
+                repository.updateProposal(availability)
+            }
+        }
     }
 
     fun addTeacher(name: String, surname: String) {
@@ -52,33 +180,9 @@ class TeacherViewModel @Inject constructor(
         }
     }
 
-    fun updateScheduleStatus(status: ScheduleStatus, note: String = "") {
-        val teacher = currentTeacher.value ?: return
-        viewModelScope.launch {
-            repository.updateTeacher(teacher.copy(scheduleStatus = status, adminNote = note))
-        }
-    }
-
-    fun toggleAvailability(dayIndex: Int, slotIndex: Int) {
-        if (slotIndex == 4) return
-        val teacherId = _selectedTeacherId.value ?: return
-        val currentStatus = availabilityMatrix.value.find { 
-            it.dayIndex == dayIndex && it.slotIndex == slotIndex 
-        }
-        
-        viewModelScope.launch {
-            repository.updateAvailability(
-                TeacherAvailability(
-                    teacherId = teacherId,
-                    dayIndex = dayIndex,
-                    slotIndex = slotIndex,
-                    isBusy = !(currentStatus?.isBusy ?: false)
-                )
-            )
-            val teacher = currentTeacher.value
-            if (teacher != null && teacher.scheduleStatus != ScheduleStatus.PENDING) {
-                repository.updateTeacher(teacher.copy(scheduleStatus = ScheduleStatus.PENDING))
-            }
-        }
-    }
+    private data class DataQueryState(
+        val id: Int?,
+        val teacher: Teacher?,
+        val isEditing: Boolean
+    )
 }
