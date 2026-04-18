@@ -39,7 +39,6 @@ class TeacherViewModel @Inject constructor(
     }.flatMapLatest { state ->
         val id = state.id ?: return@flatMapLatest flowOf(emptyList<TeacherAvailability>())
         
-        // Use proposals buffer if editing OR if there is a pending decision
         if (state.isEditing || 
             state.teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL || 
             state.teacher?.scheduleStatus == ScheduleStatus.PENDING) {
@@ -80,6 +79,7 @@ class TeacherViewModel @Inject constructor(
     fun submitAdminProposal(note: String) {
         val id = _selectedTeacherId.value ?: return
         viewModelScope.launch {
+            // Clear teacher's old note, set new admin note
             repository.updateScheduleStatus(id, ScheduleStatus.ADMIN_PROPOSAL, adminNote = note, teacherNote = "")
             _isAdminEditing.value = false
         }
@@ -88,7 +88,7 @@ class TeacherViewModel @Inject constructor(
     fun approveTeacherRequest(note: String = "") {
         val id = _selectedTeacherId.value ?: return
         viewModelScope.launch {
-            repository.applyProposal(id) // Move teacher's changes to main availability
+            repository.applyProposal(id)
             repository.updateScheduleStatus(id, ScheduleStatus.APPROVED, adminNote = note, teacherNote = "")
         }
     }
@@ -96,8 +96,8 @@ class TeacherViewModel @Inject constructor(
     fun rejectTeacherRequest(note: String) {
         val id = _selectedTeacherId.value ?: return
         viewModelScope.launch {
-            repository.discardProposal(id) // Clear teacher's requested changes
-            repository.updateScheduleStatus(id, ScheduleStatus.REJECTED, adminNote = note)
+            repository.discardProposal(id)
+            repository.updateScheduleStatus(id, ScheduleStatus.REJECTED, adminNote = note, teacherNote = "")
         }
     }
 
@@ -122,7 +122,8 @@ class TeacherViewModel @Inject constructor(
     fun sendTeacherRequest(note: String) {
         val id = _selectedTeacherId.value ?: return
         viewModelScope.launch {
-            repository.updateScheduleStatus(id, ScheduleStatus.PENDING, teacherNote = note)
+            // When teacher sends request, clear old admin note
+            repository.updateScheduleStatus(id, ScheduleStatus.PENDING, adminNote = "", teacherNote = note)
             _isTeacherEditing.value = false
         }
     }
@@ -131,7 +132,7 @@ class TeacherViewModel @Inject constructor(
         val id = _selectedTeacherId.value ?: return
         viewModelScope.launch {
             repository.applyProposal(id)
-            repository.updateScheduleStatus(id, ScheduleStatus.APPROVED, adminNote = "Öneriniz kabul edildi.", teacherNote = "")
+            repository.updateScheduleStatus(id, ScheduleStatus.APPROVED, adminNote = "", teacherNote = "")
         }
     }
 
@@ -139,7 +140,8 @@ class TeacherViewModel @Inject constructor(
         val id = _selectedTeacherId.value ?: return
         viewModelScope.launch {
             repository.discardProposal(id)
-            repository.updateScheduleStatus(id, ScheduleStatus.REJECTED, teacherNote = note)
+            // Clear old admin note, set new teacher rejection note
+            repository.updateScheduleStatus(id, ScheduleStatus.REJECTED, adminNote = "", teacherNote = note)
         }
     }
 

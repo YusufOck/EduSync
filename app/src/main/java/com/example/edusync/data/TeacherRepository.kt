@@ -80,12 +80,21 @@ class TeacherRepository @Inject constructor(
         teachersRef.child(teacher.id.toString()).setValue(encrypted).await()
     }
 
-    suspend fun updateScheduleStatus(teacherId: Int, status: ScheduleStatus, adminNote: String = "", teacherNote: String = "") {
+    /**
+     * Updated to handle nulls and clear notes correctly.
+     * Use null to leave unchanged, empty string to clear.
+     */
+    suspend fun updateScheduleStatus(
+        teacherId: Int, 
+        status: ScheduleStatus, 
+        adminNote: String? = null, 
+        teacherNote: String? = null
+    ) {
         val updates = mutableMapOf<String, Any>(
             "scheduleStatus" to status.name
         )
-        if (adminNote.isNotEmpty()) updates["adminNote"] = SecurityUtils.encrypt(adminNote)
-        if (teacherNote.isNotEmpty()) updates["teacherNote"] = SecurityUtils.encrypt(teacherNote)
+        adminNote?.let { updates["adminNote"] = if (it.isEmpty()) "" else SecurityUtils.encrypt(it) }
+        teacherNote?.let { updates["teacherNote"] = if (it.isEmpty()) "" else SecurityUtils.encrypt(it) }
 
         teachersRef.child(teacherId.toString()).updateChildren(updates).await()
     }

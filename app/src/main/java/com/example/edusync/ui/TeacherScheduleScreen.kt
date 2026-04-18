@@ -1,5 +1,6 @@
 package com.example.edusync.ui
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
@@ -16,12 +18,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.edusync.data.ScheduleStatus
+import com.example.edusync.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,217 +57,243 @@ fun TeacherScheduleScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = { 
-                    Column {
-                        Text(teacher?.let { "${it.title} ${it.name} ${it.surname}" } ?: "Yükleniyor...")
-                        teacher?.let { 
-                            val statusText = when(it.scheduleStatus) {
-                                ScheduleStatus.PENDING -> "Admin Onayı Bekliyor"
-                                ScheduleStatus.APPROVED -> "Onaylandı"
-                                ScheduleStatus.REJECTED -> "Revize İsteniyor"
-                                ScheduleStatus.ADMIN_PROPOSAL -> "Admin Öneri Sundu"
-                            }
-                            Text("Durum: $statusText", style = MaterialTheme.typography.bodySmall)
-                        }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = teacher?.let { "${it.title} ${it.name} ${it.surname}" } ?: "Yükleniyor...",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryBlue
+                        )
+                        teacher?.let { StatusBadge(it.scheduleStatus) }
                     }
                 },
                 navigationIcon = {
                     if (onNavigateBack != null) {
                         IconButton(onClick = onNavigateBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri", tint = PrimaryBlue)
                         }
                     }
                 },
                 actions = {
                     if (isReadOnly) {
-                        // ADMIN EDIT TOGGLE
-                        IconButton(onClick = { 
-                            if (isAdminEditing) viewModel.cancelAdminEdit() else viewModel.startAdminEdit()
-                        }) {
+                        IconButton(
+                            onClick = { if (isAdminEditing) viewModel.cancelAdminEdit() else viewModel.startAdminEdit() }
+                        ) {
                             Icon(
                                 if (isAdminEditing) Icons.Default.EditOff else Icons.Default.Edit, 
-                                contentDescription = "Düzenle",
-                                tint = if (isAdminEditing) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                                "Düzenle",
+                                tint = if (isAdminEditing) PrimaryBlue else Color.Gray
                             )
                         }
-                    } else {
-                        // TEACHER EDIT TOGGLE
-                        val status = teacher?.scheduleStatus
-                        if (status != ScheduleStatus.PENDING && status != ScheduleStatus.ADMIN_PROPOSAL) {
-                            IconButton(onClick = { 
-                                if (isTeacherEditing) viewModel.cancelTeacherEdit() else viewModel.startTeacherEdit()
-                            }) {
-                                Icon(
-                                    if (isTeacherEditing) Icons.Default.EditOff else Icons.Default.Edit, 
-                                    contentDescription = "Düzenle",
-                                    tint = if (isTeacherEditing) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                                )
-                            }
+                    } else if (teacher?.scheduleStatus != ScheduleStatus.PENDING && teacher?.scheduleStatus != ScheduleStatus.ADMIN_PROPOSAL) {
+                        IconButton(
+                            onClick = { if (isTeacherEditing) viewModel.cancelTeacherEdit() else viewModel.startTeacherEdit() }
+                        ) {
+                            Icon(
+                                if (isTeacherEditing) Icons.Default.EditOff else Icons.Default.Edit, 
+                                "Düzenle",
+                                tint = if (isTeacherEditing) PrimaryBlue else Color.Gray
+                            )
                         }
                     }
                     if (onLogout != null) {
                         IconButton(onClick = onLogout) {
-                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Çıkış Yap")
+                            Icon(Icons.AutoMirrored.Filled.ExitToApp, "Çıkış Yap", tint = ErrorRed)
                         }
                     }
                 }
             )
         },
         bottomBar = {
-            if (isReadOnly) {
-                // --- ADMIN BOTTOM BAR ---
-                BottomAppBar {
-                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(tonalElevation = 8.dp, shadowElevation = 12.dp) {
+                if (isReadOnly) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (isAdminEditing) {
-                            Button(onClick = { showNoteDialog = true }, modifier = Modifier.weight(1f)) {
+                            Button(
+                                onClick = { showNoteDialog = true },
+                                modifier = Modifier.weight(1.3f).height(54.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                            ) {
                                 Icon(Icons.AutoMirrored.Filled.Send, null)
-                                Spacer(Modifier.width(4.dp))
-                                Text("HOCAYA SUN")
+                                Spacer(Modifier.width(8.dp))
+                                Text("HOCAYA SUN", fontWeight = FontWeight.Bold)
                             }
-                            OutlinedButton(onClick = { viewModel.cancelAdminEdit() }, modifier = Modifier.weight(1f)) {
-                                Text("VAZGEÇ")
+                            OutlinedButton(
+                                onClick = { viewModel.cancelAdminEdit() },
+                                modifier = Modifier.weight(1f).height(54.dp),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Text("İPTAL")
                             }
                         } else if (teacher?.scheduleStatus == ScheduleStatus.PENDING) {
                             Button(
-                                onClick = { viewModel.approveTeacherRequest("Admin isteğinizi onayladı.") },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                                onClick = { viewModel.approveTeacherRequest("Talebiniz kabul edildi.") },
+                                modifier = Modifier.weight(1f).height(54.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
                                 Icon(Icons.Default.Check, null)
-                                Spacer(Modifier.width(4.dp))
+                                Spacer(Modifier.width(8.dp))
                                 Text("ONAYLA")
                             }
                             Button(
                                 onClick = { showNoteDialog = true },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                modifier = Modifier.weight(1f).height(54.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
                                 Icon(Icons.Default.Close, null)
-                                Spacer(Modifier.width(4.dp))
+                                Spacer(Modifier.width(8.dp))
                                 Text("REDDET")
                             }
                         }
                     }
-                }
-            } else {
-                // --- TEACHER BOTTOM BAR ---
-                val status = teacher?.scheduleStatus
-                BottomAppBar {
+                } else {
+                    val status = teacher?.scheduleStatus
                     if (status == ScheduleStatus.ADMIN_PROPOSAL) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(
                                 onClick = { viewModel.approveAdminProposal() },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                                modifier = Modifier.weight(1f).height(54.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
-                                Icon(Icons.Default.Check, null)
-                                Spacer(Modifier.width(4.dp))
-                                Text("ÖNERİYİ ONAYLA")
+                                Icon(Icons.Default.CheckCircle, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("ONAYLA", fontWeight = FontWeight.Bold)
                             }
                             Button(
                                 onClick = { showNoteDialog = true },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                modifier = Modifier.weight(1f).height(54.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
-                                Icon(Icons.Default.Close, null)
-                                Spacer(Modifier.width(4.dp))
+                                Icon(Icons.Default.Cancel, null)
+                                Spacer(Modifier.width(8.dp))
                                 Text("REDDET")
                             }
                         }
                     } else if (isTeacherEditing) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { showNoteDialog = true }, modifier = Modifier.weight(1f)) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(
+                                onClick = { showNoteDialog = true },
+                                modifier = Modifier.weight(1.3f).height(54.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                            ) {
                                 Icon(Icons.AutoMirrored.Filled.Send, null)
-                                Spacer(Modifier.width(4.dp))
-                                Text("ADMİNE GÖNDER")
+                                Spacer(Modifier.width(8.dp))
+                                Text("ADMİNE GÖNDER", fontWeight = FontWeight.Bold)
                             }
-                            OutlinedButton(onClick = { viewModel.cancelTeacherEdit() }, modifier = Modifier.weight(1f)) {
+                            OutlinedButton(
+                                onClick = { viewModel.cancelTeacherEdit() },
+                                modifier = Modifier.weight(1f).height(54.dp),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
                                 Text("VAZGEÇ")
                             }
-                        }
-                    } else {
-                        // Normal view mode for teacher
-                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = if (status == ScheduleStatus.PENDING) "İsteğiniz Admin onayında..." else "Düzenlemek için kalem ikonuna tıklayın",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.Gray
-                            )
                         }
                     }
                 }
             }
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            
-            // --- DYNAMIC MESSAGE BOX ---
-            val messageToShow = if (isReadOnly) {
-                // Admin ekranında hocanın notu varsa göster (PENDING ise)
-                if (teacher?.scheduleStatus == ScheduleStatus.PENDING && !teacher?.teacherNote.isNullOrEmpty()) teacher?.teacherNote else ""
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .background(BackgroundLight)
+        ) {
+            // Dynamic Message Banner
+            val msg = if (isReadOnly) {
+                if (teacher?.scheduleStatus == ScheduleStatus.PENDING) teacher?.teacherNote else ""
             } else {
-                // Hoca ekranında adminin notu varsa göster (REJECTED veya PROPOSAL ise)
-                if ((teacher?.scheduleStatus == ScheduleStatus.REJECTED || teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) 
-                    && !teacher?.adminNote.isNullOrEmpty()) teacher?.adminNote else ""
+                if (teacher?.scheduleStatus == ScheduleStatus.REJECTED || teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) teacher?.adminNote else ""
             }
 
-            if (!messageToShow.isNullOrEmpty()) {
-                Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    modifier = Modifier.fillMaxWidth().padding(8.dp),
-                    shape = MaterialTheme.shapes.small
+            AnimatedVisibility(visible = !msg.isNullOrEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = LightBlue),
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = CardDefaults.cardElevation(4.dp)
                 ) {
-                    Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (isReadOnly) "Hoca Notu: $messageToShow" else "Admin Mesajı: $messageToShow",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Chat, null, tint = PrimaryBlue)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                if (isReadOnly) "Hoca'dan Gelen Not" else "Admin'den Gelen Mesaj",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlue
+                            )
+                            Text(msg ?: "", style = MaterialTheme.typography.bodyMedium, color = TextDark)
+                        }
                     }
                 }
             }
 
+            // Courses Chip List
             if (courses.isNotEmpty()) {
-                LazyColumn(modifier = Modifier.heightIn(max = 100.dp).padding(horizontal = 16.dp)) {
+                Text("Sorumlu Olduğu Dersler", modifier = Modifier.padding(start = 16.dp, top = 8.dp), style = MaterialTheme.typography.labelMedium, color = TextLight)
+                LazyColumn(modifier = Modifier.heightIn(max = 100.dp).padding(horizontal = 12.dp)) {
                     items(courses) { course ->
-                        Text("• ${course.code} - ${course.name}", fontSize = 12.sp)
+                        Card(
+                            modifier = Modifier.padding(4.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White)
+                        ) {
+                            Text("${course.code} - ${course.name}", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 12.sp, color = TextDark)
+                        }
                     }
                 }
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
             }
 
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                Spacer(modifier = Modifier.width(60.dp))
-                days.forEach { Text(it, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontWeight = FontWeight.Bold) }
+            // Table Header
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp, start = 12.dp, end = 12.dp)) {
+                Spacer(modifier = Modifier.width(54.dp))
+                days.forEach { day ->
+                    Text(day, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold, color = PrimaryBlue, fontSize = 14.sp)
+                }
             }
 
             val isInteractionEnabled = isAdminEditing || isTeacherEditing
-            
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                 itemsIndexed(timeSlots) { slotIndex, time ->
-                    Row(modifier = Modifier.fillMaxWidth().height(45.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(time, modifier = Modifier.width(60.dp), fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Row(modifier = Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(time, modifier = Modifier.width(54.dp), fontSize = 11.sp, fontWeight = FontWeight.Medium, color = TextLight, textAlign = TextAlign.Center)
                         for (dayIndex in 0..4) {
                             val isBusy = availability.find { it.dayIndex == dayIndex && it.slotIndex == slotIndex }?.isBusy ?: false
                             val isLunch = slotIndex == 4
+                            
                             Box(
                                 modifier = Modifier
-                                    .weight(1f).fillMaxHeight().padding(1.dp)
-                                    .background(when {
-                                        isLunch -> Color.LightGray.copy(alpha = 0.4f)
-                                        isBusy -> Color(0xFFEF5350)
-                                        else -> Color(0xFF66BB6A)
-                                    })
-                                    .border(0.5.dp, Color.LightGray)
+                                    .weight(1f).fillMaxHeight().padding(2.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        when {
+                                            isLunch -> Color(0xFFECEFF1)
+                                            isBusy -> ErrorRed
+                                            else -> SuccessGreen
+                                        }
+                                    )
                                     .clickable(enabled = !isLunch && isInteractionEnabled) {
                                         viewModel.toggleAvailability(dayIndex, slotIndex)
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (isLunch) Text("Öğle", fontSize = 9.sp)
+                                if (isLunch) Text("☕", fontSize = 14.sp)
+                                else Icon(
+                                    imageVector = if (isBusy) Icons.Default.Close else Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.9f),
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                     }
@@ -271,39 +304,52 @@ fun TeacherScheduleScreen(
         if (showNoteDialog) {
             AlertDialog(
                 onDismissRequest = { showNoteDialog = false },
-                title = { 
-                    Text(when {
-                        isReadOnly && isAdminEditing -> "Hocaya İletilecek Mesaj"
-                        isReadOnly -> "Reddetme Sebebi"
-                        teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL -> "Reddetme Sebebi"
-                        else -> "Admin'e İletilecek Not"
-                    }) 
-                },
+                shape = RoundedCornerShape(28.dp),
+                title = { Text("Mesajınızı İletin", fontWeight = FontWeight.ExtraBold) },
                 text = {
                     OutlinedTextField(
                         value = noteInput,
                         onValueChange = { noteInput = it },
-                        placeholder = { Text("Buraya yazın...") },
-                        modifier = Modifier.fillMaxWidth()
+                        placeholder = { Text("Örn: Bu saatlerde başka bir dersim var...") },
+                        modifier = Modifier.fillMaxWidth().height(140.dp),
+                        shape = RoundedCornerShape(16.dp)
                     )
                 },
                 confirmButton = {
-                    TextButton(onClick = {
-                        if (isReadOnly) {
-                            if (isAdminEditing) viewModel.submitAdminProposal(noteInput)
-                            else viewModel.rejectTeacherRequest(noteInput)
-                        } else {
-                            if (teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) viewModel.rejectAdminProposal(noteInput)
-                            else viewModel.sendTeacherRequest(noteInput)
-                        }
-                        showNoteDialog = false
-                        noteInput = ""
-                    }) { Text("GÖNDER") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showNoteDialog = false }) { Text("İPTAL") }
+                    Button(
+                        onClick = {
+                            if (isReadOnly) {
+                                if (isAdminEditing) viewModel.submitAdminProposal(noteInput)
+                                else viewModel.rejectTeacherRequest(noteInput)
+                            } else {
+                                if (teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) viewModel.rejectAdminProposal(noteInput)
+                                else viewModel.sendTeacherRequest(noteInput)
+                            }
+                            showNoteDialog = false
+                            noteInput = ""
+                        },
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("GÖNDER") }
                 }
             )
         }
+    }
+}
+
+@Composable
+fun StatusBadge(status: ScheduleStatus) {
+    val (text, color) = when(status) {
+        ScheduleStatus.PENDING -> "Onay Bekliyor" to WarningOrange
+        ScheduleStatus.APPROVED -> "Onaylandı" to SuccessGreen
+        ScheduleStatus.REJECTED -> "Revize Gerekli" to ErrorRed
+        ScheduleStatus.ADMIN_PROPOSAL -> "Öneri Sunuldu" to PrimaryBlue
+    }
+    Surface(
+        color = color.copy(alpha = 0.15f),
+        contentColor = color,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.padding(top = 4.dp)
+    ) {
+        Text(text, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp), fontWeight = FontWeight.ExtraBold)
     }
 }
