@@ -70,7 +70,8 @@ class ChatViewModel @Inject constructor(
     @OptIn(ExperimentalCoroutinesApi::class)
     val totalUnreadCount = _currentUserId.flatMapLatest { currentId ->
         if (currentId == null) return@flatMapLatest flowOf(0)
-        chatRepository.getTotalUnreadCount(currentId)
+        // Admin: Counts unique chats with unread messages. Teacher: Counts all unread messages.
+        chatRepository.getTotalUnreadCount(currentId, currentId == "admin")
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     val messageableTeachers = combine(

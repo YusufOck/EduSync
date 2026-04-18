@@ -5,7 +5,6 @@ import com.google.firebase.database.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -101,24 +100,35 @@ class ChatRepository @Inject constructor(
     }
 
     /**
-     * Efficiently listen to all unread messages for a specific user across all chats.
+     * Role-based unread count.
+     * Admin: Counts unique chats that have at least one unread message.
+     * Teacher: Counts every single unread message.
      */
-    fun getTotalUnreadCount(userId: String): Flow<Int> = callbackFlow {
+    fun getTotalUnreadCount(userId: String, isAdmin: Boolean): Flow<Int> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                var total = 0
-                snapshot.children.forEach { chatSnapshot ->
-                    chatSnapshot.children.forEach { msgSnapshot ->
-                        val msg = msgSnapshot.getValue(Message::class.java)
-                        if (msg != null && msg.receiverId == userId && !msg.isRead) {
-                            // Check if deleted logically
-                            if (!msg.deletedByReceiver) {
-                                total++
+                var count = 0
+                if (isAdmin) {
+                    // Count how many different chats have unread messages
+                    snapshot.children.forEach { chatSnapshot ->
+                        val hasUnread = chatSnapshot.children.any { msgSnapshot ->
+                            val msg = msgSnapshot.getValue(Message::class.java)
+                            msg != null && msg.receiverId == userId && !msg.isRead && !msg.deletedByReceiver
+                        }
+                        if (hasUnread) count++
+                    }
+                } else {
+                    // Count every single message
+                    snapshot.children.forEach { chatSnapshot ->
+                        chatSnapshot.children.forEach { msgSnapshot ->
+                            val msg = msgSnapshot.getValue(Message::class.java)
+                            if (msg != null && msg.receiverId == userId && !msg.isRead && !msg.deletedByReceiver) {
+                                count++
                             }
                         }
                     }
                 }
-                trySend(total)
+                trySend(count)
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
