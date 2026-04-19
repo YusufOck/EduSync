@@ -6,17 +6,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.edusync.data.*
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
 class AdminViewModel @Inject constructor(
     private val excelManager: ExcelManager,
+    private val teacherRepository: TeacherRepository,
     private val userRepository: FirebaseUserRepository
 ) : ViewModel() {
 
@@ -28,16 +25,29 @@ class AdminViewModel @Inject constructor(
 
     private var currentUri: Uri? = null
 
-    val verificationCodes = userRepository.getAllVerificationCodes()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val teachers = teacherRepository.getAllTeachers().stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+    )
 
-    fun generateCode() {
+    // Kodları hocalarla eşleştiriyoruz
+    val verificationCodes = userRepository.getAllVerificationCodes()
+        .map { codes ->
+            val allTeachers = teacherRepository.getAllTeachers().first()
+            codes.map { code ->
+                val teacher = allTeachers.find { it.id == code.teacherId }
+                // UI'da göstermek için teacherId yerine hoca ismini geçici olarak koda inject ediyoruz
+                // (Veya Data Class'ı UI'a özel genişletebiliriz, şimdilik isim bilgisini saklayalım)
+                code.copy(createdBy = teacher?.let { "${it.title} ${it.name} ${it.surname}" } ?: "Genel Kod")
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun generateCodeForTeacher(teacherId: Int) {
         viewModelScope.launch {
-            val newCode = UUID.randomUUID().toString().substring(0, 8).uppercase()
-            userRepository.insertVerificationCode(VerificationCode(code = newCode))
+            teacherRepository.generateCodeForTeacher(teacherId)
         }
     }
 
+    // Excel ve diğer işlemler...
     fun loadPreview(context: Context, uri: Uri) {
         currentUri = uri
         val result = excelManager.getPreview(context, uri)

@@ -22,7 +22,7 @@ data class Teacher(
     var title: String = "",
     var scheduleStatus: ScheduleStatus = ScheduleStatus.APPROVED,
     var adminNote: String = "",
-    var teacherNote: String = "" // Added to separate messages
+    var teacherNote: String = ""
 )
 
 data class TeacherAvailability(
@@ -32,7 +32,10 @@ data class TeacherAvailability(
     @get:PropertyName("busy")
     @set:PropertyName("busy")
     @PropertyName("busy")
-    var isBusy: Boolean = false 
+    var isBusy: Boolean = false,
+    var courseName: String = "",
+    var courseCode: String = "",
+    var classroom: String = ""
 )
 
 data class Course(
@@ -43,6 +46,7 @@ data class Course(
 
 data class VerificationCode(
     var code: String = "",
+    var teacherId: Int? = null, // Hangi hoca için üretildi?
     @get:PropertyName("used")
     @set:PropertyName("used")
     @PropertyName("used")

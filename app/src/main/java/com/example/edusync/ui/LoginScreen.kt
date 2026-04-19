@@ -26,15 +26,12 @@ import com.example.edusync.ui.theme.*
 @Composable
 fun LoginScreen(
     onLoginSuccess: (UserRole, Int?, String) -> Unit,
+    onNavigateToActivation: () -> Unit,
     viewModel: LoginViewModel = hiltViewModel()
 ) {
-    var isRegisterMode by remember { mutableStateOf(false) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
-    var code by remember { mutableStateOf("") }
-    var name by remember { mutableStateOf("") }
-    var surname by remember { mutableStateOf("") }
 
     val loginState by viewModel.loginState.collectAsState()
 
@@ -43,9 +40,6 @@ fun LoginScreen(
         if (currentState is LoginResult.Success) {
             val user = currentState.user
             onLoginSuccess(user.role, user.teacherId, user.username)
-            viewModel.resetState()
-        } else if (currentState is LoginResult.RegisterSuccess) {
-            isRegisterMode = false
             viewModel.resetState()
         }
     }
@@ -82,7 +76,7 @@ fun LoginScreen(
             )
 
             Text(
-                text = if (isRegisterMode) "Yeni Hesap Oluştur" else "Akademik Portala Hoş Geldiniz",
+                text = "Akademik Portala Hoş Geldiniz",
                 style = MaterialTheme.typography.titleMedium,
                 color = Color.White.copy(alpha = 0.8f)
             )
@@ -131,63 +125,27 @@ fun LoginScreen(
                         singleLine = true
                     )
 
-                    AnimatedVisibility(visible = isRegisterMode) {
-                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            OutlinedTextField(
-                                value = code,
-                                onValueChange = { code = it },
-                                label = { Text("Doğrulama Kodu") },
-                                modifier = Modifier.fillMaxWidth(),
-                                leadingIcon = { Icon(Icons.Default.VpnKey, null, tint = PrimaryBlue) },
-                                shape = RoundedCornerShape(12.dp),
-                                singleLine = true
-                            )
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedTextField(
-                                    value = name,
-                                    onValueChange = { name = it },
-                                    label = { Text("Ad") },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    singleLine = true
-                                )
-                                OutlinedTextField(
-                                    value = surname,
-                                    onValueChange = { surname = it },
-                                    label = { Text("Soyad") },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    singleLine = true
-                                )
-                            }
-                        }
-                    }
-
                     Button(
-                        onClick = {
-                            if (isRegisterMode) viewModel.registerTeacher(username, password, code, name, surname)
-                            else viewModel.login(username, password)
-                        },
+                        onClick = { viewModel.login(username, password) },
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
                     ) {
-                        Text(if (isRegisterMode) "KAYIT OL" else "GİRİŞ YAP", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("GİRİŞ YAP", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                 }
             }
 
+            Spacer(modifier = Modifier.height(24.dp))
+
             TextButton(
-                onClick = {
-                    isRegisterMode = !isRegisterMode
-                    viewModel.resetState()
-                },
-                modifier = Modifier.padding(top = 8.dp)
+                onClick = onNavigateToActivation,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = if (isRegisterMode) "Zaten hesabım var? Giriş Yap" else "Yeni hoca mısınız? Kayıt olun",
-                    color = Color.White
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Yeni hoca mısınız?", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                    Text("Kayıt Kodunla Hesabını Aktive Et", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
             }
 
             if (loginState is LoginResult.Error) {

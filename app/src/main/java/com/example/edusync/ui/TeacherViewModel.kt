@@ -20,8 +20,16 @@ class TeacherViewModel @Inject constructor(
     private val _isAdminEditing = MutableStateFlow(false)
     val isAdminEditing = _isAdminEditing.asStateFlow()
 
+    private val _conflictError = MutableStateFlow<String?>(null)
+    val conflictError = _conflictError.asStateFlow()
+
     val teachers = repository.getAllTeachers().stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+    )
+
+    // Admin için global görünüm verisi
+    val globalSchedules = repository.getAllAvailabilities().stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap()
     )
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -35,8 +43,6 @@ class TeacherViewModel @Inject constructor(
         Triple(id, teacher, adminEditing)
     }.flatMapLatest { (id, teacher, editing) ->
         if (id == null) return@flatMapLatest flowOf(emptyList<TeacherAvailability>())
-        
-        // Admin düzenleme yaparken veya hoca öneriyi incelerken proposal oku
         if (editing || teacher?.scheduleStatus == ScheduleStatus.ADMIN_PROPOSAL) {
             repository.getProposal(id)
         } else {
@@ -52,6 +58,21 @@ class TeacherViewModel @Inject constructor(
 
     fun selectTeacher(id: Int) {
         _selectedTeacherId.value = id
+    }
+
+    // --- ACCOUNT ACTIVATION ---
+
+    suspend fun checkVerificationCode(code: String): VerificationCode? {
+        return repository.getVerificationCode(code)
+    }
+
+    suspend fun getTeacherById(id: Int): Teacher? {
+        return repository.getTeacherById(id)
+    }
+
+    suspend fun activateAccount(code: String, username: String, password: String): Boolean {
+        val user = User(username = username, password = password)
+        return repository.activateTeacherAccount(code, user)
     }
 
     // --- ADMIN ACTIONS ---
@@ -72,69 +93,52 @@ class TeacherViewModel @Inject constructor(
         }
     }
 
-    fun submitAdminProposal(note: String) {
-        val id = _selectedTeacherId.value ?: return
-        viewModelScope.launch {
-            // Admin öneri sunarken hoca notunu temizler, kendi notunu yazar.
-            repository.updateScheduleStatus(id, ScheduleStatus.ADMIN_PROPOSAL, adminNote = note, teacherNote = "")
-            _isAdminEditing.value = false
-        }
-    }
-
-    fun approveTeacherRequest(note: String = "") {
-        val id = _selectedTeacherId.value ?: return
-        viewModelScope.launch {
-            repository.updateScheduleStatus(id, ScheduleStatus.APPROVED, adminNote = note, teacherNote = "")
-        }
-    }
-
-    fun rejectTeacherRequest(note: String) {
-        val id = _selectedTeacherId.value ?: return
-        viewModelScope.launch {
-            repository.updateScheduleStatus(id, ScheduleStatus.REJECTED, adminNote = note, teacherNote = "")
-        }
-    }
-
-    // --- TEACHER ACTIONS ---
-
-    fun approveAdminProposal() {
-        val id = _selectedTeacherId.value ?: return
-        viewModelScope.launch {
-            repository.applyProposal(id) // Öneriyi kalıcı hale getir
-            repository.updateScheduleStatus(id, ScheduleStatus.APPROVED, adminNote = "", teacherNote = "")
-        }
-    }
-
-    fun rejectAdminProposal(note: String) {
-        val id = _selectedTeacherId.value ?: return
-        viewModelScope.launch {
-            repository.discardProposal(id) // Öneriyi sil
-            // Admin notunu sil, hocanın neden reddettiğini teacherNote'a yaz (Admin görsün)
-            repository.updateScheduleStatus(id, ScheduleStatus.REJECTED, adminNote = "", teacherNote = note)
-        }
-    }
-
-    // --- COMMON ---
-
-    fun toggleAvailability(dayIndex: Int, slotIndex: Int) {
-        if (slotIndex == 4) return
+    fun assignCourse(dayIndex: Int, slotIndex: Int, course: Course, classroom: String) {
         val teacherId = _selectedTeacherId.value ?: return
-        if (!_isAdminEditing.value) return // Sadece admin düzenleyebilir
-        
-        val currentStatus = availabilityMatrix.value.find { 
-            it.dayIndex == dayIndex && it.slotIndex == slotIndex 
+        viewModelScope.launch {
+            val conflict = repository.checkClassroomConflict(dayIndex, slotIndex, classroom, teacherId)
+            if (conflict != null) {
+                _conflictError.value = "Çakışma: $classroom dersliğinde o saatte $conflict"
+                return@launch
+            }
+            _conflictError.value = null
+            repository.updateProposal(
+                TeacherAvailability(
+                    teacherId = teacherId,
+                    dayIndex = dayIndex,
+                    slotIndex = slotIndex,
+                    isBusy = true,
+                    courseName = course.name,
+                    courseCode = course.code,
+                    classroom = classroom
+                )
+            )
         }
-        val newBusy = !(currentStatus?.isBusy ?: false)
-        
+    }
+
+    fun clearSlot(dayIndex: Int, slotIndex: Int) {
+        val teacherId = _selectedTeacherId.value ?: return
         viewModelScope.launch {
             repository.updateProposal(
                 TeacherAvailability(
                     teacherId = teacherId,
                     dayIndex = dayIndex,
                     slotIndex = slotIndex,
-                    isBusy = newBusy
+                    isBusy = false
                 )
             )
+        }
+    }
+
+    fun clearConflictError() {
+        _conflictError.value = null
+    }
+
+    fun submitAdminProposal(note: String) {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.updateScheduleStatus(id, ScheduleStatus.ADMIN_PROPOSAL, adminNote = note, teacherNote = "")
+            _isAdminEditing.value = false
         }
     }
 
@@ -147,6 +151,24 @@ class TeacherViewModel @Inject constructor(
     fun deleteTeacher(teacher: Teacher) {
         viewModelScope.launch {
             repository.deleteTeacher(teacher)
+        }
+    }
+
+    // --- TEACHER ACTIONS ---
+
+    fun approveAdminProposal() {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.applyProposal(id)
+            repository.updateScheduleStatus(id, ScheduleStatus.APPROVED, adminNote = "", teacherNote = "")
+        }
+    }
+
+    fun rejectAdminProposal(note: String) {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            repository.discardProposal(id)
+            repository.updateScheduleStatus(id, ScheduleStatus.REJECTED, adminNote = "", teacherNote = note)
         }
     }
 }

@@ -38,8 +38,8 @@ fun AppNavigation(
         }
     }
 
-    val showAdminBar = currentUserRole == UserRole.ADMIN && currentDestination?.route != Screen.Login.route
-    val showTeacherBar = currentUserRole == UserRole.TEACHER && currentDestination?.route != Screen.Login.route
+    val showAdminBar = currentUserRole == UserRole.ADMIN && currentDestination?.route != Screen.Login.route && currentDestination?.route != Screen.ActivateAccount.route
+    val showTeacherBar = currentUserRole == UserRole.TEACHER && currentDestination?.route != Screen.Login.route && currentDestination?.route != Screen.ActivateAccount.route
 
     Scaffold(
         bottomBar = {
@@ -134,7 +134,19 @@ fun AppNavigation(
                                 popUpTo(Screen.Login.route) { inclusive = true }
                             }
                         }
-                    }
+                    },
+                    onNavigateToActivation = { navController.navigate(Screen.ActivateAccount.route) }
+                )
+            }
+
+            composable(Screen.ActivateAccount.route) {
+                ActivateAccountScreen(
+                    onActivationSuccess = {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.ActivateAccount.route) { inclusive = true }
+                        }
+                    },
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
             
@@ -185,7 +197,9 @@ fun AppNavigation(
                         currentUserRole = null
                         currentUsername = null
                         navController.navigate(Screen.Login.route) { popUpTo(0) { inclusive = true } }
-                    }
+                    },
+                    onNavigateToExcel = { navController.navigate(Screen.ExcelImport.route) },
+                    onNavigateToCodes = { navController.navigate(Screen.VerificationCodes.route) }
                 )
             }
 
@@ -228,6 +242,10 @@ fun AppNavigation(
                 AdminExcelImportScreen(
                     onNavigateBack = { navController.popBackStack() }
                 )
+            }
+
+            composable(Screen.GlobalSchedule.route) {
+                GlobalScheduleScreen()
             }
         }
     }

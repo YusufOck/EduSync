@@ -13,7 +13,6 @@ import javax.inject.Inject
 
 sealed class LoginResult {
     data class Success(val user: User) : LoginResult()
-    object RegisterSuccess : LoginResult()
     data class Error(val message: String) : LoginResult()
 }
 
@@ -31,11 +30,9 @@ class LoginViewModel @Inject constructor(
             try {
                 val existingAdmin = userRepository.getUserByUsername("admin")
                 if (existingAdmin == null) {
-                    // Admin şifresini SHA-256 ile şifreleyerek kaydediyoruz
                     val hashedDefaultPassword = SecurityUtils.hashPassword("123")
                     userRepository.insertUser(User(username = "admin", password = hashedDefaultPassword, role = UserRole.ADMIN))
                 }
-                userRepository.insertVerificationCode(VerificationCode(code = "HOCA2024"))
             } catch (e: Exception) {
                 Log.e("LoginViewModel", "Firebase Init Error: ${e.message}")
             }
@@ -46,7 +43,6 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val user = userRepository.getUserByUsername(username)
-                // Gelen şifreyi hashleyip DB'deki hash ile karşılaştırıyoruz
                 val hashedInputPassword = SecurityUtils.hashPassword(password)
                 if (user != null && user.password == hashedInputPassword) {
                     _loginState.value = LoginResult.Success(user)
@@ -55,56 +51,6 @@ class LoginViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 _loginState.value = LoginResult.Error("Bağlantı Hatası")
-            }
-        }
-    }
-
-    fun registerTeacher(username: String, password: String, code: String, name: String, surname: String) {
-        viewModelScope.launch {
-            try {
-                if (userRepository.getUserByUsername(username) != null) {
-                    _loginState.value = LoginResult.Error("Bu kullanıcı adı zaten alınmış")
-                    return@launch
-                }
-
-                val validCode = userRepository.getValidVerificationCode(code)
-                if (validCode == null) {
-                    _loginState.value = LoginResult.Error("Geçersiz veya kullanılmış doğrulama kodu")
-                    return@launch
-                }
-
-                val existingTeacher = teacherRepository.getTeacherByName(name, surname)
-                val teacherId: Int
-
-                if (existingTeacher != null) {
-                    val existingUser = userRepository.getUserByTeacherId(existingTeacher.id)
-                    if (existingUser != null) {
-                        _loginState.value = LoginResult.Error("Bu hoca ismiyle zaten bir hesap oluşturulmuş")
-                        return@launch
-                    }
-                    teacherId = existingTeacher.id
-                } else {
-                    val idString = teacherRepository.insertTeacher(
-                        Teacher(name = name, surname = surname)
-                    )
-                    teacherId = idString.hashCode()
-                }
-
-                // Kayıt sırasında şifreyi hashleyerek kaydediyoruz
-                val hashedRegisterPassword = SecurityUtils.hashPassword(password)
-                userRepository.insertUser(
-                    User(
-                        username = username,
-                        password = hashedRegisterPassword,
-                        role = UserRole.TEACHER,
-                        teacherId = teacherId
-                    )
-                )
-
-                userRepository.updateVerificationCode(validCode.copy(isUsed = true))
-                _loginState.value = LoginResult.RegisterSuccess
-            } catch (e: Exception) {
-                _loginState.value = LoginResult.Error("Kayıt Hatası")
             }
         }
     }
