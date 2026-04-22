@@ -140,7 +140,9 @@ fun AppNavigation() {
                         navController.navigate(Screen.Login.route) { popUpTo(0) { inclusive = true } }
                     },
                     onNavigateToExcel = { navController.navigate(Screen.ExcelImport.route) },
-                    onNavigateToCodes = { navController.navigate(Screen.VerificationCodes.route) }
+                    onNavigateToCodes = { navController.navigate(Screen.VerificationCodes.route) },
+                    onNavigateToClassrooms = { navController.navigate(Screen.Classrooms.route) },
+                    onNavigateToAssignments = { navController.navigate(Screen.Assignments.route) }
                 )
             }
 
@@ -187,6 +189,18 @@ fun AppNavigation() {
 
             composable(Screen.GlobalSchedule.route) {
                 GlobalScheduleScreen()
+            }
+
+            composable(Screen.Classrooms.route) {
+                ClassroomScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Screen.Assignments.route) {
+                AssignmentScreen(
+                    onNavigateBack = { navController.popBackStack() }
+                )
             }
         }
     }

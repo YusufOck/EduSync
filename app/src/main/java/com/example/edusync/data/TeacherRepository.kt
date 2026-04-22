@@ -355,4 +355,103 @@ class TeacherRepository @Inject constructor(
             coursesRef.removeEventListener(listener) 
         }
     }.distinctUntilChanged().flowOn(Dispatchers.IO)
+
+    // ========== Phase 2: All Courses (no filter) ==========
+
+    fun getAllCourses(): Flow<List<Course>> = callbackFlow {
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                launch(Dispatchers.Default) {
+                    val list = snapshot.children.mapNotNull { it.getValue(Course::class.java) }
+                    val decryptedList = list.map { c ->
+                        c.copy(name = SecurityUtils.decrypt(c.name))
+                    }
+                    trySend(decryptedList)
+                }
+            }
+            override fun onCancelled(error: DatabaseError) { close(error.toException()) }
+        }
+        coursesRef.addValueEventListener(listener)
+        awaitClose { coursesRef.removeEventListener(listener) }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
+
+    // ========== Phase 2: Classroom Management ==========
+
+    private val classroomsRef = database.getReference("classrooms")
+
+    fun getAllClassrooms(): Flow<List<Classroom>> = callbackFlow {
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                launch(Dispatchers.Default) {
+                    val list = snapshot.children.mapNotNull { it.getValue(Classroom::class.java) }
+                    trySend(list)
+                }
+            }
+            override fun onCancelled(error: DatabaseError) { close(error.toException()) }
+        }
+        classroomsRef.addValueEventListener(listener)
+        awaitClose { classroomsRef.removeEventListener(listener) }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
+
+    suspend fun insertClassroom(classroom: Classroom) = withContext(Dispatchers.IO) {
+        val id = classroom.roomCode.ifEmpty { System.currentTimeMillis().toString() }
+        val entry = classroom.copy(id = id)
+        classroomsRef.child(id).setValue(entry).await()
+    }
+
+    suspend fun deleteClassroom(classroomId: String) = withContext(Dispatchers.IO) {
+        classroomsRef.child(classroomId).removeValue().await()
+    }
+
+    // ========== Phase 2: Schedule Entry (Assignment) Management ==========
+
+    private val scheduleEntriesRef = database.getReference("schedule_entries")
+
+    fun getAllScheduleEntries(): Flow<List<ScheduleEntry>> = callbackFlow {
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                launch(Dispatchers.Default) {
+                    val list = snapshot.children.mapNotNull { it.getValue(ScheduleEntry::class.java) }
+                    trySend(list)
+                }
+            }
+            override fun onCancelled(error: DatabaseError) { close(error.toException()) }
+        }
+        scheduleEntriesRef.addValueEventListener(listener)
+        awaitClose { scheduleEntriesRef.removeEventListener(listener) }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
+
+    /**
+     * Phase 2 Madde 5.2: Double-booking prevention.
+     * Returns an error message if the same classroom or teacher is already booked at that slot.
+     * Returns null if no conflict exists.
+     */
+    suspend fun checkScheduleConflict(day: Int, timeSlot: Int, teacherId: Int, classroomId: String): String? = withContext(Dispatchers.IO) {
+        val snapshot = scheduleEntriesRef.get().await()
+        val entries = withContext(Dispatchers.Default) {
+            snapshot.children.mapNotNull { it.getValue(ScheduleEntry::class.java) }
+        }
+
+        for (entry in entries) {
+            if (entry.day == day && entry.timeSlot == timeSlot) {
+                if (entry.classroomId == classroomId) {
+                    return@withContext "Bu sınıf (${classroomId}) o saatte zaten dolu! (${entry.courseCode})"
+                }
+                if (entry.teacherId == teacherId) {
+                    return@withContext "Bu hoca o saatte zaten başka bir derse atanmış! (${entry.courseCode})"
+                }
+            }
+        }
+        null
+    }
+
+    suspend fun insertScheduleEntry(entry: ScheduleEntry) = withContext(Dispatchers.IO) {
+        val id = entry.id.ifEmpty { "${entry.day}_${entry.timeSlot}_${entry.classroomId}_${System.currentTimeMillis()}" }
+        val newEntry = entry.copy(id = id)
+        scheduleEntriesRef.child(id).setValue(newEntry).await()
+    }
+
+    suspend fun deleteScheduleEntry(entryId: String) = withContext(Dispatchers.IO) {
+        scheduleEntriesRef.child(entryId).removeValue().await()
+    }
 }

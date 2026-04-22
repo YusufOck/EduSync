@@ -59,3 +59,22 @@ data class VerificationCode(
     var isUsed: Boolean = false,
     var createdBy: String = "ADMIN"
 )
+
+@Stable
+data class Classroom(
+    var id: String = "",
+    var roomCode: String = "",
+    var capacity: Int = 0,
+    var department: String = ""
+)
+
+@Stable
+data class ScheduleEntry(
+    var id: String = "",
+    var courseCode: String = "",
+    var courseName: String = "",
+    var teacherId: Int = 0,
+    var classroomId: String = "",
+    var day: Int = 0,
+    var timeSlot: Int = 0
+)

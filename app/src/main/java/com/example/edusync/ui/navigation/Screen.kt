@@ -14,6 +14,8 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object VerificationCodes : Screen("verification_codes", "Kayıt Kodları", Icons.Default.Key)
     object ExcelImport : Screen("excel_import", "Excel İşlemleri", Icons.Default.FileUpload)
     object AdminMessages : Screen("admin_messages", "Mesajlar", Icons.Default.Chat)
+    object Classrooms : Screen("classrooms", "Sınıflar", Icons.Default.MeetingRoom)
+    object Assignments : Screen("assignments", "Atamalar", Icons.Default.Assignment)
     object GlobalSchedule : Screen("global_schedule", "Genel Program", Icons.Default.DateRange)
     
     // Teacher Screens
@@ -33,7 +35,8 @@ val adminBottomNavItems = listOf(
     Screen.AdminDashboard,
     Screen.TeacherManagement,
     Screen.GlobalSchedule,
-    Screen.AdminMessages
+    Screen.AdminMessages,
+    Screen.Classrooms
 )
 
 val teacherBottomNavItems = listOf(

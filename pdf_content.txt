@@ -1,0 +1,237 @@
+Mobile Programming — Course Project Phase 2 Requirements
+Sivas University of Science and Technology  |  Mobile Programming
+COURSE PROJECT
+Phase 2: Central Database & Multi-User Architecture
+Course Mobile Programming (Android)
+Phase Phase 2 — Backend & Multi-Device Access
+Prerequisite Phase 1 completed and approved
+Platform Android (API 24+)
+⚠  Phase 2 builds directly on top of Phase 1. All Phase 1 features must remain fully functional. New 
+features are added on top of the existing application.
+1. Project Overview
+In Phase 1, students built a local Android application for managing course schedules, with data stored 
+only on the device. In Phase 2, the application is extended with a centralized database backend, 
+enabling multi-device access, role-based authentication, and a richer scheduling interface.
+Key Changes from Phase 1 to Phase 2
+Phase 1 (Local) Phase 2 (Centralized)
+SQLite / SharedPreferences on device Firebase / PostgreSQL / SQLite server-side 
+(central)
+Single device only Accessible from multiple devices
+Manual username/password entry Auto-generated credentials on import
+No login system Role-based login (Admin / Lecturer)
+Calendar is view-only Lecturers see their own schedule in calendar view
+No classroom data Classroom table + course-lecturer-classroom 
+assignment
+Admin sees all data Admin sees unassigned courses, lecturers, 
+classrooms
+2. Database & Backend Requirements
+Mobile Programming — Course Project Phase 2 Requirements
+Sivas University of Science and Technology  |  Mobile Programming
+Students must migrate from local-only storage to a centralized database. The choice of database 
+technology is flexible, but must meet the multi-device access requirement.
+2.1 Accepted Database Options
+Option Technology Notes
+Option A Firebase Realtime Database / Firestore Recommended — easy Android 
+SDK, no server setup
+Option B PostgreSQL (hosted, e.g. Supabase) REST API or direct JDBC 
+connection
+Option C SQLite with a shared backend server Server must be reachable from 
+all devices on same network
+⚠  Whichever option is chosen, data must be readable and writable from at least two different 
+Android devices or emulators simultaneously.
+2.2 Required Database Tables / Collections
+The central database must contain at minimum the following tables (or Firestore collections):
+Table / Collection Key Fields Description
+departments id, name List of departments
+courses id, code, name, department_id All courses per department
+lecturers id, title, first_name, last_name, 
+department_id, username, 
+password_hash
+Lecturer accounts
+classrooms id, room_code, capacity, 
+department_id
+Physical classrooms
+schedule_entries id, course_id, lecturer_id, 
+classroom_id, day, time_slot
+Course schedule assignments
+3. Authentication & User Management
+3.1 Auto-Generated Credentials
+When the Admin imports a lecturer list (from Excel/TXT as in Phase 1), the system must automatically 
+generate a username and an initial password for each new lecturer who does not already have an 
+account in the central database.
+Field Generation Rule
+Username Lowercase first name (after stripping academic title) + underscore + 
+lowercase last name, Turkish characters normalized (e.g. ş→s, ç→c, 
+ü→u)
+Mobile Programming — Course Project Phase 2 Requirements
+Sivas University of Science and Technology  |  Mobile Programming
+Field Generation Rule
+Initial Password Randomly generated 6-character alphanumeric string (e.g. xT4k9Z)
+Password Change Flag must_change_password = true on first creation
+Example:
+Imported Name Generated 
+Username Initial Password
+Assoc. Prof. Halit Bakır halit_bakir xT4k9Z
+Assist. Prof. Rezan Bakır rezan_bakir mP7w2Q
+Assist. Prof. Porkodi Sivaram porkodi_sivaram Jn3Rv8
+3.2 First Login & Password Change
+• When a lecturer logs in for the first time (must_change_password = true), the application must 
+immediately navigate to a password change screen.
+• The password change screen must contain:
+◦ Current password field
+◦ New password field
+◦ Confirm new password field
+◦ Save button
+• After a successful password change, must_change_password is set to false in the database.
+• The lecturer cannot access any other screen until the password is changed.
+3.3 Login Screen
+A login screen must be added to the application as the entry point. The login screen must:
+• Display username and password input fields.
+• Authenticate against the central database.
+• Route the user to the appropriate home screen based on their role:
+◦ Admin role → Admin Home (full navigation)
+◦ Lecturer role → Lecturer Home (limited navigation: Home + Calendar only)
+• Show an error message for invalid credentials.
+4. Lecturer Profile & Calendar View
+4.1 Lecturer Home Screen
+After a successful login, a Lecturer user sees a personalized home screen with the following 
+information:
+• Welcome message: Welcome, [Title] [First Name] [Last Name]
+• Department name
+• A summary of total assigned courses for the current week
+Mobile Programming — Course Project Phase 2 Requirements
+Sivas University of Science and Technology  |  Mobile Programming
+4.2 Calendar View (My Schedule)
+Each lecturer must be able to view their own weekly schedule in a calendar format. This is accessible 
+via the Calendar navigation menu.
+Calendar Screen Requirements
+• Display a weekly grid (Monday through Friday).
+• Show time slots as rows (at minimum 2 slots per day; full hourly slots are a bonus).
+• Each assigned course must appear in the corresponding day/time cell showing:
+◦ Course code and course name
+◦ Assigned classroom code
+• Empty slots must be visually distinguishable from occupied slots.
+• The calendar must load data from the central database based on the logged-in lecturer's ID.
+Example Calendar Layout:
+Time Slot Monday Tuesday Wednesday Thursday Friday
+08:00–10:00 CNG 103 Intro
+to Prog. 
+(A101)
+CNG 342 
+Networks 
+(B204)
+10:00–12:00 CNG 346 
+Mobile Prog. 
+(C301)
+13:00–15:00 CNG 103 Intro
+to Prog. 
+(A101)
+15:00–17:00
+5. Classroom Management
+5.1 Classroom Table
+A new Classrooms section must be added to the application (accessible from the Admin navigation). 
+This screen lists all available classrooms and allows management of classroom data.
+• Each classroom record must include:
+◦ Room code (e.g., A101, B204, LAB-1)
+◦ Capacity (number of students)
+◦ Department or building (optional but recommended)
+• The Admin must be able to add new classrooms manually from this screen.
+• Classrooms can also be imported from a file (same mechanism as courses).
+Mobile Programming — Course Project Phase 2 Requirements
+Sivas University of Science and Technology  |  Mobile Programming
+5.2 Course – Lecturer – Classroom Assignment
+The Admin must be able to assign a course to a lecturer and a classroom in a specific time slot. This 
+assignment screen must:
+• Allow selection of:
+◦ A course from the courses list
+◦ A lecturer from the lecturers list
+◦ A classroom from the classrooms list
+◦ Day of the week (Monday – Friday)
+◦ Time slot
+• Prevent double-booking: the same classroom or lecturer cannot be assigned to two different 
+courses in the same time slot.
+• Save the assignment to the central database (schedule_entries table).
+• Display all current assignments in a list or table view.
+6. Admin Dashboard Enhancements
+The Admin home screen must provide quick visibility into the current state of the schedule. Three 
+summary panels must be shown on the Admin home page:
+Admin Home — Required Summary Panels
+Panel Content
+Unassigned Lecturers List of lecturers who have no courses assigned to them in the 
+schedule_entries table. Shows name, title, and department.
+Unassigned Courses List of courses that have no entry in the schedule_entries table (i.e., not
+yet placed in the schedule). Shows course code, name, and 
+department.
+Available Classrooms List of classrooms that are currently not assigned to any time slot, or 
+classrooms that have at least one free time slot remaining in the week.
+⚠  These panels must query the central database in real time. Static or hardcoded data will not be 
+accepted.
+Additionally, the Admin navigation must now include a 5th menu item:
+# Menu Item Function
+1 Home Admin dashboard with summary panels (existing)
+2 Calendar View full department schedule (existing)
+3 Data Import courses & lecturers from file (existing)
+4 Settings Department & position selection (existing)
+5 Classrooms Manage classrooms and assignments (NEW in Phase 2)
+Mobile Programming — Course Project Phase 2 Requirements
+Sivas University of Science and Technology  |  Mobile Programming
+7. Technical Requirements
+7.1 Architecture & Code Quality
+• Follow the MVVM (Model-View-ViewModel) architecture pattern.
+• Use Repository pattern to abstract database access.
+• Network/database operations must run on background threads (use Coroutines or RxJava — do
+not block the main thread).
+• Passwords must not be stored in plaintext. Use hashing (e.g., SHA-256 or bcrypt).
+7.2 Error Handling & UX
+• Show loading indicators (ProgressBar or shimmer) while fetching data from the database.
+• Handle no-internet / no-connection states gracefully with an appropriate message.
+• Validate all forms before submission (empty fields, password mismatch, etc.).
+• Show confirmation dialogs before any destructive or irreversible action.
+7.3 Security
+• Session management: store the logged-in user's token/session securely (SharedPreferences 
+with encryption or equivalent).
+• A lecturer must only be able to see their own data — enforce this at the query level, not just the 
+UI level.
+• Admin credentials must be set up separately and not be importable from the Excel file.
+8. Deliverables
+Students must submit the following:
+# Deliverable Details
+1 Source Code Full Android Studio project (zipped or Git repository link)
+2 APK File Debug APK that can be installed and tested
+3 Database Schema Screenshot or export of the database structure (tables, 
+fields, relationships)
+4 Demo Video 2–5 minute screen recording demonstrating all Phase 2 
+features
+5 Short Report 1–2 page PDF describing chosen database technology, 
+architecture decisions, and any known limitations
+9. Grading Criteria
+Mobile Programming — Course Project Phase 2 Requirements
+Sivas University of Science and Technology  |  Mobile Programming
+Criteria Points Notes
+Central database setup and multi-device access 20 Must work on 2 
+devices
+Auto-generated credentials on import 10
+First-login password change flow 10
+Login screen with role-based routing 10
+Lecturer calendar view (own schedule) 15
+Classroom table management 10
+Course-Lecturer-Classroom assignment 15 Incl. double-
+booking prevention
+Admin dashboard summary panels 10 Real-time queries
+Code quality, architecture, error handling Bonus +10 Up to 10 bonus 
+points
+TOTAL 100 +10 bonus
+Appendix: Summary of New Screens in Phase 2
+Screen Role Description
+Login Screen All Username + password entry, routes to correct home
+Password Change Screen Lecturer Shown on first login, mandatory before any other 
+action
+Lecturer Home Lecturer Welcome message, department, course summary
+My Schedule (Calendar) Lecturer Weekly grid of own assigned courses and 
+classrooms
+Admin Home (Enhanced) Admin Unassigned lecturers, courses, and available 
+classrooms
+Classrooms Screen Admin List, add, and manage classrooms
+Assignment Screen Admin Assign course + lecturer + classroom + time slot
+⚠  All screens listed above are additions or enhancements to the existing Phase 1 screens. No 
+Phase 1 screen should be removed or broken.
