@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.edusync.data.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
@@ -45,6 +47,7 @@ class ChatViewModel @Inject constructor(
             teacherRepository.getAllTeachers(),
             userRepository.getAllUsersFlow()
         ) { allMessages, teachers, users ->
+            // High complexity loop - move to background thread properly using flow pipeline
             allMessages.mapNotNull { (_, messages) ->
                 val lastMsg = messages.lastOrNull() ?: return@mapNotNull null
                 val otherId = if (lastMsg.senderId == "admin") lastMsg.receiverId else lastMsg.senderId
@@ -63,14 +66,13 @@ class ChatViewModel @Inject constructor(
                     unreadCount = messages.count { it.receiverId == currentId && !it.isRead }
                 )
             }.sortedByDescending { it.lastMessageTimestamp }
-        }
+        }.flowOn(Dispatchers.Default)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Dinamik Bildirim Sayacı (Badge)
     @OptIn(ExperimentalCoroutinesApi::class)
     val totalUnreadCount = _currentUserId.flatMapLatest { currentId ->
         if (currentId == null) return@flatMapLatest flowOf(0)
-        // Admin: Counts unique chats with unread messages. Teacher: Counts all unread messages.
         chatRepository.getTotalUnreadCount(currentId, currentId == "admin")
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
@@ -84,14 +86,14 @@ class ChatViewModel @Inject constructor(
                 user.username to "${teacher.title} ${teacher.name} ${teacher.surname}"
             } else null
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun sendMessage(content: String) {
         val sender = _currentUserId.value ?: return
         val receiver = _targetUserId.value ?: return
         if (content.isBlank()) return
 
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val message = Message(
                 senderId = sender,
                 receiverId = receiver,
@@ -105,14 +107,14 @@ class ChatViewModel @Inject constructor(
         val current = _currentUserId.value ?: return
         val target = _targetUserId.value ?: return
         val chatId = if (current < target) "${current}_${target}" else "${target}_${current}"
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             chatRepository.markAsRead(chatId, current)
         }
     }
 
     fun deleteChat(otherUserId: String) {
         val current = _currentUserId.value ?: return
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             chatRepository.clearChatForUser(current, otherUserId)
         }
     }

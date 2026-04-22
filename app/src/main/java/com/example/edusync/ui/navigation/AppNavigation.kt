@@ -5,8 +5,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -17,9 +20,7 @@ import com.example.edusync.data.UserRole
 import com.example.edusync.ui.*
 
 @Composable
-fun AppNavigation(
-    chatViewModel: ChatViewModel = hiltViewModel()
-) {
+fun AppNavigation() {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
@@ -28,89 +29,29 @@ fun AppNavigation(
     var currentUsername by remember { mutableStateOf<String?>(null) }
     var loggedInTeacherId by remember { mutableStateOf<Int?>(null) }
 
-    val totalUnreadCount by chatViewModel.totalUnreadCount.collectAsState()
-
-    LaunchedEffect(currentUsername, currentUserRole) {
-        if (currentUserRole == UserRole.ADMIN) {
-            chatViewModel.initUser("admin")
-        } else if (currentUsername != null) {
-            chatViewModel.initUser(currentUsername!!)
+    // PDF Optimization: Use derivedStateOf for layout decisions to minimize recomposition scopes.
+    val showAdminBar by remember(currentUserRole, currentDestination) {
+        derivedStateOf {
+            currentUserRole == UserRole.ADMIN && 
+            currentDestination?.route != Screen.Login.route && 
+            currentDestination?.route != Screen.ActivateAccount.route
         }
     }
-
-    val showAdminBar = currentUserRole == UserRole.ADMIN && currentDestination?.route != Screen.Login.route && currentDestination?.route != Screen.ActivateAccount.route
-    val showTeacherBar = currentUserRole == UserRole.TEACHER && currentDestination?.route != Screen.Login.route && currentDestination?.route != Screen.ActivateAccount.route
+    
+    val showTeacherBar by remember(currentUserRole, currentDestination) {
+        derivedStateOf {
+            currentUserRole == UserRole.TEACHER && 
+            currentDestination?.route != Screen.Login.route && 
+            currentDestination?.route != Screen.ActivateAccount.route
+        }
+    }
 
     Scaffold(
         bottomBar = {
             if (showAdminBar) {
-                NavigationBar {
-                    adminBottomNavItems.forEach { screen ->
-                        val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
-                        NavigationBarItem(
-                            icon = { 
-                                BadgedBox(
-                                    badge = {
-                                        if (screen == Screen.AdminMessages && totalUnreadCount > 0) {
-                                            Badge { Text(totalUnreadCount.toString()) }
-                                        }
-                                    }
-                                ) {
-                                    Icon(screen.icon, contentDescription = screen.title)
-                                }
-                            },
-                            label = { Text(screen.title) },
-                            selected = isSelected,
-                            onClick = {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        )
-                    }
-                }
+                AdminBottomBar(navController, currentDestination)
             } else if (showTeacherBar) {
-                NavigationBar {
-                    teacherBottomNavItems.forEach { screen ->
-                        val route = if (screen is Screen.TeacherSchedule && loggedInTeacherId != null) {
-                            screen.createRoute(loggedInTeacherId!!)
-                        } else {
-                            screen.route
-                        }
-                        
-                        val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true ||
-                                (screen is Screen.TeacherSchedule && currentDestination?.route?.startsWith("teacher_schedule") == true)
-
-                        NavigationBarItem(
-                            icon = { 
-                                BadgedBox(
-                                    badge = {
-                                        if (screen == Screen.TeacherMessages && totalUnreadCount > 0) {
-                                            Badge { Text(totalUnreadCount.toString()) }
-                                        }
-                                    }
-                                ) {
-                                    Icon(screen.icon, contentDescription = screen.title)
-                                }
-                            },
-                            label = { Text(screen.title) },
-                            selected = isSelected,
-                            onClick = {
-                                navController.navigate(route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        )
-                    }
-                }
+                TeacherBottomBar(navController, currentDestination, loggedInTeacherId)
             }
         }
     ) { innerPadding ->
@@ -205,7 +146,7 @@ fun AppNavigation(
 
             composable(Screen.TeacherManagement.route) {
                 TeacherManagementScreen(
-                    onNavigateBack = { navController.popBackStack(); Unit },
+                    onNavigateBack = { navController.popBackStack() },
                     onTeacherClick = { teacherId ->
                         navController.navigate(Screen.TeacherSchedule.createRoute(teacherId))
                     }
@@ -247,6 +188,94 @@ fun AppNavigation(
             composable(Screen.GlobalSchedule.route) {
                 GlobalScheduleScreen()
             }
+        }
+    }
+}
+
+@Composable
+fun AdminBottomBar(
+    navController: NavHostController, 
+    currentDestination: NavDestination?,
+    chatViewModel: ChatViewModel = hiltViewModel()
+) {
+    LaunchedEffect(Unit) { chatViewModel.initUser("admin") }
+    val totalUnreadCount by chatViewModel.totalUnreadCount.collectAsStateWithLifecycle()
+    
+    NavigationBar {
+        adminBottomNavItems.forEach { screen ->
+            val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
+            NavigationBarItem(
+                icon = { 
+                    BadgedBox(
+                        badge = {
+                            if (screen == Screen.AdminMessages && totalUnreadCount > 0) {
+                                Badge { Text(totalUnreadCount.toString()) }
+                            }
+                        }
+                    ) {
+                        Icon(screen.icon, contentDescription = screen.title)
+                    }
+                },
+                label = { Text(screen.title) },
+                selected = isSelected,
+                onClick = {
+                    navController.navigate(screen.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun TeacherBottomBar(
+    navController: NavHostController, 
+    currentDestination: NavDestination?,
+    loggedInTeacherId: Int?,
+    chatViewModel: ChatViewModel = hiltViewModel()
+) {
+    val totalUnreadCount by chatViewModel.totalUnreadCount.collectAsStateWithLifecycle()
+    
+    NavigationBar {
+        teacherBottomNavItems.forEach { screen ->
+            val route = if (screen is Screen.TeacherSchedule && loggedInTeacherId != null) {
+                screen.createRoute(loggedInTeacherId)
+            } else {
+                screen.route
+            }
+            
+            val isSelected = currentDestination?.hierarchy?.any { it.route == screen.route } == true ||
+                    (screen is Screen.TeacherSchedule && currentDestination?.route?.startsWith("teacher_schedule") == true)
+
+            NavigationBarItem(
+                icon = { 
+                    BadgedBox(
+                        badge = {
+                            if (screen == Screen.TeacherMessages && totalUnreadCount > 0) {
+                                Badge { Text(totalUnreadCount.toString()) }
+                            }
+                        }
+                    ) {
+                        Icon(screen.icon, contentDescription = screen.title)
+                    }
+                },
+                label = { Text(screen.title) },
+                selected = isSelected,
+                onClick = {
+                    navController.navigate(route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+            )
         }
     }
 }

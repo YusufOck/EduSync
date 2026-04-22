@@ -1,6 +1,5 @@
 package com.example.edusync.ui
 
-import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,11 +33,11 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
 
     val loginState by viewModel.loginState.collectAsState()
+    val isLoading = loginState is LoginResult.Loading
 
     LaunchedEffect(loginState) {
-        val currentState = loginState
-        if (currentState is LoginResult.Success) {
-            val user = currentState.user
+        if (loginState is LoginResult.Success) {
+            val user = (loginState as LoginResult.Success).user
             onLoginSuccess(user.role, user.teacherId, user.username)
             viewModel.resetState()
         }
@@ -101,7 +100,8 @@ fun LoginScreen(
                         modifier = Modifier.fillMaxWidth(),
                         leadingIcon = { Icon(Icons.Default.Person, null, tint = PrimaryBlue) },
                         shape = RoundedCornerShape(12.dp),
-                        singleLine = true
+                        singleLine = true,
+                        enabled = !isLoading
                     )
 
                     OutlinedTextField(
@@ -122,16 +122,22 @@ fun LoginScreen(
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         shape = RoundedCornerShape(12.dp),
-                        singleLine = true
+                        singleLine = true,
+                        enabled = !isLoading
                     )
 
                     Button(
                         onClick = { viewModel.login(username, password) },
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue)
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                        enabled = !isLoading
                     ) {
-                        Text("GİRİŞ YAP", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        if (isLoading) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                        } else {
+                            Text("GİRİŞ YAP", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        }
                     }
                 }
             }
@@ -140,7 +146,8 @@ fun LoginScreen(
 
             TextButton(
                 onClick = onNavigateToActivation,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Yeni hoca mısınız?", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)

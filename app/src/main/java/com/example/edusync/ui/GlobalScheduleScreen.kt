@@ -35,7 +35,8 @@ fun GlobalScheduleScreen(
     viewModel: TeacherViewModel = hiltViewModel()
 ) {
     val teachers by viewModel.teachers.collectAsState()
-    val globalSchedules by viewModel.globalSchedules.collectAsState()
+    // PDF Optimization: Use pre-grouped data to avoid nested loops in UI Rendering
+    val groupedSchedules by viewModel.groupedGlobalSchedules.collectAsState()
 
     var selectedDayIndex by remember { mutableIntStateOf(0) }
     var selectedSlot by remember { mutableStateOf<Pair<Int, Int>?>(null) }
@@ -55,7 +56,6 @@ fun GlobalScheduleScreen(
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize().background(BackgroundLight)) {
             
-            // Modern Gün Seçici
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = Color.White,
@@ -88,24 +88,17 @@ fun GlobalScheduleScreen(
                 }
             }
 
-            // Timeline View
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
                 contentPadding = PaddingValues(top = 24.dp, bottom = 24.dp)
             ) {
                 itemsIndexed(timeSlots) { slotIndex, time ->
                     val isLunch = slotIndex == 4
-                    val lessonsAtThisTime = mutableListOf<Pair<Teacher, TeacherAvailability>>()
-                    globalSchedules.forEach { (teacherId, availabilities) ->
-                        val slot = availabilities.find { it.dayIndex == selectedDayIndex && it.slotIndex == slotIndex && it.isBusy }
-                        if (slot != null) {
-                            val teacher = teachers.find { it.id == teacherId }
-                            if (teacher != null) lessonsAtThisTime.add(teacher to slot)
-                        }
-                    }
+                    
+                    // PDF Optimization: O(1) lookup instead of O(N*M) search
+                    val lessonsAtThisTime = groupedSchedules["${selectedDayIndex}_${slotIndex}"] ?: emptyList()
 
                     Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                        // Sol Saat ve Çizgi (Timeline Effect)
                         Column(
                             modifier = Modifier.width(60.dp).fillMaxHeight(),
                             horizontalAlignment = Alignment.CenterHorizontally
@@ -115,7 +108,6 @@ fun GlobalScheduleScreen(
                             Box(modifier = Modifier.width(2.dp).weight(1f).background(Color.LightGray.copy(alpha = 0.3f)))
                         }
 
-                        // Sağ İçerik Kartı
                         Box(
                             modifier = Modifier
                                 .padding(start = 12.dp, bottom = 20.dp)
@@ -183,15 +175,9 @@ fun GlobalScheduleScreen(
             }
         }
 
-        // Detay Diyaloğu - Daha Profesyonel Görünüm
         if (showDetailDialog && selectedSlot != null) {
             val (day, slot) = selectedSlot!!
-            val lessons = mutableListOf<Pair<Teacher, TeacherAvailability>>()
-            globalSchedules.forEach { (tid, avs) ->
-                val s = avs.find { it.dayIndex == day && it.slotIndex == slot && it.isBusy }
-                val t = teachers.find { it.id == tid }
-                if (s != null && t != null) lessons.add(t to s)
-            }
+            val lessons = groupedSchedules["${day}_${slot}"] ?: emptyList()
 
             AlertDialog(
                 onDismissRequest = { showDetailDialog = false },
@@ -216,7 +202,10 @@ fun GlobalScheduleScreen(
                                 Text("Bu saat diliminde planlanmış bir ders bulunmuyor.", color = Color.Gray)
                             } else {
                                 LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    itemsIndexed(lessons) { _, (teacher, availability) ->
+                                    itemsIndexed(
+                                        items = lessons,
+                                        key = { _, (teacher, _) -> teacher.id }
+                                    ) { _, (teacher, availability) ->
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()

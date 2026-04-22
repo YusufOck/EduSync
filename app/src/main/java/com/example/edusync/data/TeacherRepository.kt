@@ -2,11 +2,13 @@ package com.example.edusync.data
 
 import com.google.firebase.database.*
 import com.example.edusync.util.SecurityUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,201 +24,335 @@ class TeacherRepository @Inject constructor(
     private val codesRef = database.getReference("verification_codes")
     private val usersRef = database.getReference("users")
 
-    // Yardımcı: Bir hocanın Firebase'deki gerçek "Key"ini ID üzerinden bulur
-    private suspend fun getTeacherKeyById(id: Int): String {
-        val snapshot = teachersRef.get().await()
-        for (child in snapshot.children) {
-            if (child.child("id").getValue(Int::class.java) == id) {
-                return child.key ?: id.toString()
-            }
-        }
-        return id.toString()
-    }
+    private fun getTeacherKeyById(id: Int): String = id.toString()
 
     fun getAllTeachers(): Flow<List<Teacher>> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = snapshot.children.mapNotNull { it.getValue(Teacher::class.java)?.let { t ->
-                    t.copy(
-                        name = SecurityUtils.decrypt(t.name),
-                        surname = SecurityUtils.decrypt(t.surname),
-                        department = SecurityUtils.decrypt(t.department),
-                        title = SecurityUtils.decrypt(t.title),
-                        adminNote = SecurityUtils.decrypt(t.adminNote),
-                        teacherNote = SecurityUtils.decrypt(t.teacherNote)
-                    )
-                }}
-                trySend(list)
+                launch(Dispatchers.Default) {
+                    val list = snapshot.children.mapNotNull { it.getValue(Teacher::class.java) }
+                    val decryptedList = list.map { t ->
+                        t.copy(
+                            name = SecurityUtils.decrypt(t.name),
+                            surname = SecurityUtils.decrypt(t.surname),
+                            department = SecurityUtils.decrypt(t.department),
+                            title = SecurityUtils.decrypt(t.title),
+                            adminNote = SecurityUtils.decrypt(t.adminNote),
+                            teacherNote = SecurityUtils.decrypt(t.teacherNote)
+                        )
+                    }
+                    trySend(decryptedList)
+                }
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
+        // PDF Optimization: Add listener without wrapping in a launch block to prevent memory leak and cancellation mismatch
         teachersRef.addValueEventListener(listener)
-        awaitClose { teachersRef.removeEventListener(listener) }
+        awaitClose { 
+            teachersRef.removeEventListener(listener) 
+        }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
+
+    suspend fun getOrInsertTeacherOptimized(teacher: Teacher, existingTeachers: List<Teacher>): Long = withContext(Dispatchers.IO) {
+        val normalizedInputName = withContext(Dispatchers.Default) { normalize(teacher.name) }
+        val normalizedInputSurname = withContext(Dispatchers.Default) { normalize(teacher.surname) }
+        
+        val existing = existingTeachers.find { 
+            normalize(it.name) == normalizedInputName && normalize(it.surname) == normalizedInputSurname 
+        }
+        
+        if (existing != null) return@withContext existing.id.toLong()
+
+        val id = System.currentTimeMillis().toInt() 
+        val targetRef = teachersRef.child(id.toString())
+        
+        val encryptedTeacher = withContext(Dispatchers.Default) {
+            teacher.copy(
+                id = id,
+                name = SecurityUtils.encrypt(teacher.name),
+                surname = SecurityUtils.encrypt(teacher.surname),
+                department = SecurityUtils.encrypt(teacher.department),
+                title = SecurityUtils.encrypt(teacher.title)
+            )
+        }
+        targetRef.setValue(encryptedTeacher).await()
+        id.toLong()
     }
 
-    suspend fun getTeacherById(id: Int): Teacher? {
-        // ID bazlı arama yapıyoruz (en güvenli yol)
-        val all = getAllTeachers().first()
-        return all.find { it.id == id }
+    fun getTeacherByIdFlow(id: Int): Flow<Teacher?> = callbackFlow {
+        val ref = teachersRef.child(id.toString())
+        val listener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                launch(Dispatchers.Default) {
+                    val teacher = snapshot.getValue(Teacher::class.java)
+                    val decrypted = teacher?.let { t ->
+                        t.copy(
+                            name = SecurityUtils.decrypt(t.name),
+                            surname = SecurityUtils.decrypt(t.surname),
+                            department = SecurityUtils.decrypt(t.department),
+                            title = SecurityUtils.decrypt(t.title),
+                            adminNote = SecurityUtils.decrypt(t.adminNote),
+                            teacherNote = SecurityUtils.decrypt(t.teacherNote)
+                        )
+                    }
+                    trySend(decrypted)
+                }
+            }
+            override fun onCancelled(error: DatabaseError) { close(error.toException()) }
+        }
+        ref.addValueEventListener(listener)
+        awaitClose { 
+            ref.removeEventListener(listener) 
+        }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
+
+    suspend fun getTeacherById(id: Int): Teacher? = withContext(Dispatchers.IO) {
+        val snapshot = teachersRef.child(id.toString()).get().await()
+        snapshot.getValue(Teacher::class.java)?.let { t ->
+            withContext(Dispatchers.Default) {
+                t.copy(
+                    name = SecurityUtils.decrypt(t.name),
+                    surname = SecurityUtils.decrypt(t.surname),
+                    department = SecurityUtils.decrypt(t.department),
+                    title = SecurityUtils.decrypt(t.title),
+                    adminNote = SecurityUtils.decrypt(t.adminNote),
+                    teacherNote = SecurityUtils.decrypt(t.teacherNote)
+                )
+            }
+        }
     }
 
-    suspend fun insertTeacher(teacher: Teacher): Long {
+    suspend fun insertTeacher(teacher: Teacher): Long = withContext(Dispatchers.IO) {
         val all = getAllTeachers().first()
         val existing = all.find { 
             normalize(it.name) == normalize(teacher.name) && normalize(it.surname) == normalize(teacher.surname) 
         }
-        if (existing != null) return existing.id.toLong()
+        if (existing != null) return@withContext existing.id.toLong()
 
         val id = System.currentTimeMillis().toInt() 
-        val targetRef = teachersRef.child(id.toString()) // Yeni kayıtları hep ID ile açıyoruz
+        val targetRef = teachersRef.child(id.toString())
         
-        val encryptedTeacher = teacher.copy(
-            id = id,
-            name = SecurityUtils.encrypt(teacher.name),
-            surname = SecurityUtils.encrypt(teacher.surname),
-            department = SecurityUtils.encrypt(teacher.department),
-            title = SecurityUtils.encrypt(teacher.title)
-        )
+        val encryptedTeacher = withContext(Dispatchers.Default) {
+            teacher.copy(
+                id = id,
+                name = SecurityUtils.encrypt(teacher.name),
+                surname = SecurityUtils.encrypt(teacher.surname),
+                department = SecurityUtils.encrypt(teacher.department),
+                title = SecurityUtils.encrypt(teacher.title)
+            )
+        }
         targetRef.setValue(encryptedTeacher).await()
-        return id.toLong()
+        id.toLong()
     }
 
-    suspend fun updateScheduleStatus(teacherId: Int, status: ScheduleStatus, adminNote: String? = null, teacherNote: String? = null) {
+    suspend fun updateScheduleStatus(teacherId: Int, status: ScheduleStatus, adminNote: String? = null, teacherNote: String? = null) = withContext(Dispatchers.IO) {
         val key = getTeacherKeyById(teacherId)
         val updates = mutableMapOf<String, Any>("scheduleStatus" to status.name)
-        adminNote?.let { updates["adminNote"] = if (it.isEmpty()) "" else SecurityUtils.encrypt(it) }
-        teacherNote?.let { updates["teacherNote"] = if (it.isEmpty()) "" else SecurityUtils.encrypt(it) }
+        
+        withContext(Dispatchers.Default) {
+            adminNote?.let { updates["adminNote"] = if (it.isEmpty()) "" else SecurityUtils.encrypt(it) }
+            teacherNote?.let { updates["teacherNote"] = if (it.isEmpty()) "" else SecurityUtils.encrypt(it) }
+        }
+        
         teachersRef.child(key).updateChildren(updates).await()
     }
 
     private fun normalize(t: String) = t.lowercase(Locale("tr")).replace('ı','i').replace('ş','s').replace('ğ','g').replace('ü','u').replace('ö','o').replace('ç','c').trim()
 
-    // --- Aktivasyon İşlemleri ---
-    suspend fun generateCodeForTeacher(teacherId: Int): String {
+    suspend fun generateCodeForTeacher(teacherId: Int): String = withContext(Dispatchers.IO) {
         val code = (100000..999999).random().toString()
         codesRef.child(code).setValue(VerificationCode(code = code, teacherId = teacherId, isUsed = false)).await()
-        return code
+        code
     }
 
-    suspend fun getVerificationCode(code: String): VerificationCode? {
+    suspend fun getVerificationCode(code: String): VerificationCode? = withContext(Dispatchers.IO) {
         val snap = codesRef.child(code).get().await()
-        return snap.getValue(VerificationCode::class.java)
+        snap.getValue(VerificationCode::class.java)
     }
 
-    suspend fun activateTeacherAccount(code: String, user: User): Boolean {
-        val vCode = getVerificationCode(code) ?: return false
-        if (vCode.isUsed || vCode.teacherId == null) return false
+    suspend fun activateTeacherAccount(code: String, user: User): Boolean = withContext(Dispatchers.IO) {
+        val hashedPassword = withContext(Dispatchers.Default) { SecurityUtils.hashPassword(user.password) }
+
+        // Mapped to Task 4: Race Condition fixed with Firebase Transaction
+        val teacherId = kotlinx.coroutines.suspendCancellableCoroutine<Int?> { continuation ->
+            codesRef.child(code).runTransaction(object : Transaction.Handler {
+                override fun doTransaction(currentData: MutableData): Transaction.Result {
+                    val vCode = currentData.getValue(VerificationCode::class.java)
+                    if (vCode == null || vCode.isUsed || vCode.teacherId == null) {
+                        return Transaction.abort()
+                    }
+                    vCode.isUsed = true
+                    currentData.value = vCode
+                    return Transaction.success(currentData)
+                }
+
+                override fun onComplete(error: DatabaseError?, committed: Boolean, snapshot: DataSnapshot?) {
+                    if (committed && error == null) {
+                        val vCode = snapshot?.getValue(VerificationCode::class.java)
+                        continuation.resumeWith(Result.success(vCode?.teacherId))
+                    } else {
+                        continuation.resumeWith(Result.success(null))
+                    }
+                }
+            })
+        }
+
+        if (teacherId == null) return@withContext false
 
         val newUser = user.copy(
             role = UserRole.TEACHER,
-            teacherId = vCode.teacherId,
-            password = SecurityUtils.hashPassword(user.password)
+            teacherId = teacherId,
+            password = hashedPassword
         )
         usersRef.child(newUser.username).setValue(newUser).await()
-        codesRef.child(code).child("used").setValue(true).await()
-        return true
+        true
     }
 
-    // --- Program İşlemleri ---
     fun getAvailability(teacherId: Int): Flow<List<TeacherAvailability>> = callbackFlow {
         val ref = availabilityRef.child(teacherId.toString())
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                trySend(snapshot.children.mapNotNull { it.getValue(TeacherAvailability::class.java) })
+                launch(Dispatchers.Default) {
+                    val list = snapshot.children.mapNotNull { it.getValue(TeacherAvailability::class.java) }
+                    trySend(list)
+                }
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
         ref.addValueEventListener(listener)
-        awaitClose { ref.removeEventListener(listener) }
-    }
+        awaitClose { 
+            ref.removeEventListener(listener) 
+        }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
 
     fun getProposal(teacherId: Int): Flow<List<TeacherAvailability>> = callbackFlow {
         val ref = proposalsRef.child(teacherId.toString())
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                trySend(snapshot.children.mapNotNull { it.getValue(TeacherAvailability::class.java) })
+                launch(Dispatchers.Default) {
+                    val list = snapshot.children.mapNotNull { it.getValue(TeacherAvailability::class.java) }
+                    trySend(list)
+                }
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
         ref.addValueEventListener(listener)
-        awaitClose { ref.removeEventListener(listener) }
-    }
+        awaitClose { 
+            ref.removeEventListener(listener) 
+        }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
 
-    suspend fun updateProposal(availability: TeacherAvailability) {
+    suspend fun updateProposal(availability: TeacherAvailability) = withContext(Dispatchers.IO) {
         val key = "${availability.dayIndex}_${availability.slotIndex}"
         proposalsRef.child(availability.teacherId.toString()).child(key).setValue(availability).await()
     }
 
-    suspend fun applyProposal(teacherId: Int) {
+    suspend fun applyProposal(teacherId: Int) = withContext(Dispatchers.IO) {
         val snapshot = proposalsRef.child(teacherId.toString()).get().await()
         availabilityRef.child(teacherId.toString()).setValue(snapshot.value).await()
         proposalsRef.child(teacherId.toString()).removeValue().await()
     }
 
-    suspend fun discardProposal(teacherId: Int) {
+    suspend fun discardProposal(teacherId: Int) = withContext(Dispatchers.IO) {
         proposalsRef.child(teacherId.toString()).removeValue().await()
     }
 
-    suspend fun copyAvailabilityToProposal(teacherId: Int) {
+    suspend fun copyAvailabilityToProposal(teacherId: Int) = withContext(Dispatchers.IO) {
         val snapshot = availabilityRef.child(teacherId.toString()).get().await()
         proposalsRef.child(teacherId.toString()).setValue(snapshot.value).await()
     }
 
-    // --- Çakışma Kontrolü ---
-    suspend fun checkClassroomConflict(dayIndex: Int, slotIndex: Int, classroom: String, excludeTeacherId: Int): String? {
-        val snapshot = availabilityRef.get().await()
-        for (teacherSnap in snapshot.children) {
+    suspend fun checkClassroomConflict(dayIndex: Int, slotIndex: Int, classroom: String, excludeTeacherId: Int): String? = withContext(Dispatchers.IO) {
+        // PDF Optimization Task 5: Parallel Process with async/await
+        val availabilitiesDeferred = async<DataSnapshot> { availabilityRef.get().await() }
+        val teachersDeferred = async<DataSnapshot> { teachersRef.get().await() }
+        
+        val availabilitiesSnapshot = availabilitiesDeferred.await()
+        val teachersSnapshot = teachersDeferred.await()
+        
+        val teachersMap = withContext(Dispatchers.Default) {
+            teachersSnapshot.children.mapNotNull { it.getValue(Teacher::class.java) }.associateBy { it.id }
+        }
+
+        for (teacherSnap in availabilitiesSnapshot.children) {
             val tId = teacherSnap.key?.toIntOrNull() ?: continue
             if (tId == excludeTeacherId) continue
+            
             val slot = teacherSnap.child("${dayIndex}_${slotIndex}").getValue(TeacherAvailability::class.java)
             if (slot?.isBusy == true && slot.classroom == classroom) {
-                val tKey = getTeacherKeyById(tId)
-                val tData = teachersRef.child(tKey).get().await().getValue(Teacher::class.java)
-                return "${SecurityUtils.decrypt(tData?.name)} ${SecurityUtils.decrypt(tData?.surname)} hocanın dersi var."
+                val tData = teachersMap[tId]
+                return@withContext withContext(Dispatchers.Default) {
+                    val name = SecurityUtils.decrypt(tData?.name)
+                    val surname = SecurityUtils.decrypt(tData?.surname)
+                    "$name $surname hocanın dersi var."
+                }
             }
         }
-        return null
+        null
     }
 
     fun getAllAvailabilities(): Flow<Map<Int, List<TeacherAvailability>>> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val resultMap = mutableMapOf<Int, List<TeacherAvailability>>()
-                snapshot.children.forEach { teacherSnap ->
-                    val tid = teacherSnap.key?.toIntOrNull() ?: return@forEach
-                    resultMap[tid] = teacherSnap.children.mapNotNull { it.getValue(TeacherAvailability::class.java) }
+                launch(Dispatchers.Default) {
+                    val resultMap = mutableMapOf<Int, List<TeacherAvailability>>()
+                    snapshot.children.forEach { teacherSnap ->
+                        val tid = teacherSnap.key?.toIntOrNull() ?: return@forEach
+                        resultMap[tid] = teacherSnap.children.mapNotNull { teacherSnap.child(it.key!!).getValue(TeacherAvailability::class.java) }
+                    }
+                    trySend(resultMap)
                 }
-                trySend(resultMap)
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
         availabilityRef.addValueEventListener(listener)
-        awaitClose { availabilityRef.removeEventListener(listener) }
-    }
+        awaitClose { 
+            availabilityRef.removeEventListener(listener) 
+        }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
 
-    suspend fun deleteTeacher(teacher: Teacher) {
+    suspend fun deleteTeacher(teacher: Teacher) = withContext(Dispatchers.IO) {
         val key = getTeacherKeyById(teacher.id)
         teachersRef.child(key).removeValue().await()
         availabilityRef.child(teacher.id.toString()).removeValue().await()
         proposalsRef.child(teacher.id.toString()).removeValue().await()
     }
 
-    suspend fun insertCourse(course: Course) {
-        val encryptedCourse = course.copy(name = SecurityUtils.encrypt(course.name))
+    suspend fun insertCourse(course: Course) = withContext(Dispatchers.IO) {
+        val encryptedName = withContext(Dispatchers.Default) { SecurityUtils.encrypt(course.name) }
+        val encryptedCourse = course.copy(name = encryptedName)
         coursesRef.child(course.code).setValue(encryptedCourse).await()
+    }
+
+    suspend fun insertCoursesBatch(courses: List<Course>) = withContext(Dispatchers.IO) {
+        val updates = mutableMapOf<String, Any>()
+        withContext(Dispatchers.Default) {
+            courses.forEach { course ->
+                val encryptedName = SecurityUtils.encrypt(course.name)
+                updates[course.code] = course.copy(name = encryptedName)
+            }
+        }
+        if (updates.isNotEmpty()) {
+            coursesRef.updateChildren(updates).await()
+        }
     }
 
     fun getCoursesByTeacher(teacherId: Int): Flow<List<Course>> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = snapshot.children.mapNotNull { it.getValue(Course::class.java)?.let { c ->
-                    c.copy(name = SecurityUtils.decrypt(c.name))
-                }}.filter { it.teacherId == teacherId }
-                trySend(list)
+                launch(Dispatchers.Default) {
+                    val list = snapshot.children.mapNotNull { it.getValue(Course::class.java) }
+                    val filteredAndDecrypted = list.filter { it.teacherId == teacherId }.map { c ->
+                        c.copy(name = SecurityUtils.decrypt(c.name))
+                    }
+                    trySend(filteredAndDecrypted)
+                }
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
         coursesRef.addValueEventListener(listener)
-        awaitClose { coursesRef.removeEventListener(listener) }
-    }
+        awaitClose { 
+            coursesRef.removeEventListener(listener) 
+        }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
 }

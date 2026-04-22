@@ -15,11 +15,12 @@ object FirebaseModule {
     @Provides
     @Singleton
     fun provideFirebaseDatabase(): FirebaseDatabase {
+        // Simplified to prevent startup hangs. 
+        // Persistence is explicitly disabled to avoid SQLite I/O blocking on API 34/35 emulators.
         val databaseUrl = "https://edusync-e905f-default-rtdb.europe-west1.firebasedatabase.app/" 
-        return FirebaseDatabase.getInstance(databaseUrl).apply {
-            // Emülatör yavaşlığını (Davey errors) önlemek için persistence'ı optimize ediyoruz
-            // Android 15 (API 35) için daha stabil bir asenkron yapı sunar
-        }
+        val database = FirebaseDatabase.getInstance(databaseUrl)
+        database.setPersistenceEnabled(false)
+        return database
     }
 
     @Provides

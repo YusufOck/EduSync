@@ -1,7 +1,9 @@
 package com.example.edusync.data
 
 import com.google.firebase.database.PropertyName
+import androidx.compose.runtime.Stable
 
+@Stable
 data class Message(
     var id: String = "",
     var senderId: String = "", 
@@ -17,6 +19,7 @@ data class Message(
     var deletedByReceiver: Boolean = false
 )
 
+@Stable
 data class ChatSummary(
     val otherUserId: String, 
     val otherUserName: String,

@@ -1,11 +1,13 @@
 package com.example.edusync.data
 
 import com.google.firebase.database.PropertyName
+import androidx.compose.runtime.Stable
 
 enum class UserRole { ADMIN, TEACHER }
 
 enum class ScheduleStatus { PENDING, APPROVED, REJECTED, ADMIN_PROPOSAL }
 
+@Stable
 data class User(
     var id: Int = 0,
     var username: String = "",
@@ -14,6 +16,7 @@ data class User(
     var teacherId: Int? = null
 )
 
+@Stable
 data class Teacher(
     var id: Int = 0,
     var name: String = "",
@@ -25,6 +28,7 @@ data class Teacher(
     var teacherNote: String = ""
 )
 
+@Stable
 data class TeacherAvailability(
     var teacherId: Int = 0,
     var dayIndex: Int = 0,
@@ -38,12 +42,14 @@ data class TeacherAvailability(
     var classroom: String = ""
 )
 
+@Stable
 data class Course(
     var code: String = "",
     var name: String = "",
     var teacherId: Int? = null
 )
 
+@Stable
 data class VerificationCode(
     var code: String = "",
     var teacherId: Int? = null, // Hangi hoca için üretildi?

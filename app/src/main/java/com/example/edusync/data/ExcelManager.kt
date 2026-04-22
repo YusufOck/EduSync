@@ -3,9 +3,11 @@ package com.example.edusync.data
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.InputStream
-import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -21,9 +23,9 @@ class ExcelManager @Inject constructor(
 ) {
     private val TAG = "ExcelManager"
 
-    fun getPreview(context: Context, uri: Uri): Result<List<ExcelPreviewItem>> {
+    suspend fun getPreview(context: Context, uri: Uri): Result<List<ExcelPreviewItem>> = withContext(Dispatchers.IO) {
         var inputStream: InputStream? = null
-        return try {
+        try {
             inputStream = context.contentResolver.openInputStream(uri)
             val workbook = WorkbookFactory.create(inputStream)
             val sheet = workbook.getSheetAt(0)
@@ -46,16 +48,20 @@ class ExcelManager @Inject constructor(
             Log.e(TAG, "Önizleme hatası", e)
             Result.failure(e)
         } finally {
-            inputStream?.close()
+            try { inputStream?.close() } catch (e: Exception) {}
         }
     }
 
-    suspend fun importExcel(context: Context, uri: Uri): Result<Int> {
+    suspend fun importExcel(context: Context, uri: Uri): Result<Int> = withContext(Dispatchers.IO) {
         var inputStream: InputStream? = null
-        return try {
+        try {
+            val existingTeachers = teacherRepository.getAllTeachers().first()
+            
             inputStream = context.contentResolver.openInputStream(uri)
             val workbook = WorkbookFactory.create(inputStream)
             val sheet = workbook.getSheetAt(0)
+            
+            val coursesToInsert = mutableListOf<Course>()
             var count = 0
 
             for (i in 1..sheet.lastRowNum) {
@@ -66,6 +72,7 @@ class ExcelManager @Inject constructor(
                 val lecturerFull = row.getCell(2)?.toString()?.trim() ?: ""
 
                 if (courseCode.isNotEmpty() && lecturerFull.isNotEmpty()) {
+                    // PDF Optimization: Split logic is CPU intensive, stays in IO/Default
                     val parts = lecturerFull.split(" ").filter { it.isNotBlank() }
                     val titleParts = parts.filter { it.contains(".") || it.equals("Dr", ignoreCase = true) }
                     val title = titleParts.joinToString(" ")
@@ -76,24 +83,28 @@ class ExcelManager @Inject constructor(
 
                     if (name.isEmpty()) continue
 
-                    // Veritabanına kaydederken ve ararken hep normalize (küçük harf + i/ı fix) kullanıyoruz
-                    val teacherId = teacherRepository.insertTeacher(
-                        Teacher(name = name, surname = surname, title = title)
+                    val teacherId = teacherRepository.getOrInsertTeacherOptimized(
+                        Teacher(name = name, surname = surname, title = title),
+                        existingTeachers
                     ).toInt()
 
-                    teacherRepository.insertCourse(
-                        Course(code = courseCode, name = courseName, teacherId = teacherId)
-                    )
+                    coursesToInsert.add(Course(code = courseCode, name = courseName, teacherId = teacherId))
                     count++
                 }
             }
+            
+            // PDF Optimization: Use batch insert instead of multiple individual calls
+            if (coursesToInsert.isNotEmpty()) {
+                teacherRepository.insertCoursesBatch(coursesToInsert)
+            }
+
             workbook.close()
             Result.success(count)
         } catch (e: Throwable) {
             Log.e(TAG, "Aktarım hatası", e)
             Result.failure(e)
         } finally {
-            inputStream?.close()
+            try { inputStream?.close() } catch (e: Exception) {}
         }
     }
 }

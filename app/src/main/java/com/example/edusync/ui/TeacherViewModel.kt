@@ -4,10 +4,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.edusync.data.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
+
+// PDF 3.1: Modelling screen states with a sealed class
+sealed class TeacherUiState<out T> {
+    object Idle : TeacherUiState<Nothing>()
+    object Loading : TeacherUiState<Nothing>()
+    data class Success<T>(val data: T) : TeacherUiState<T>()
+    data class Error(val message: String, val retryable: Boolean = true) : TeacherUiState<Nothing>()
+}
 
 @HiltViewModel
 class TeacherViewModel @Inject constructor(
@@ -23,20 +34,33 @@ class TeacherViewModel @Inject constructor(
     private val _conflictError = MutableStateFlow<String?>(null)
     val conflictError = _conflictError.asStateFlow()
 
-    val teachers = repository.getAllTeachers().stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
-    )
+    // PDF 3.2: Using StateFlow for predictable UI updates
+    val teachers = repository.getAllTeachers()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Admin için global görünüm verisi
-    val globalSchedules = repository.getAllAvailabilities().stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap()
-    )
+    val globalSchedules = repository.getAllAvailabilities()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    // PDF Optimization: Pre-calculate grouped schedule to avoid heavy loops in UI (GlobalScheduleScreen)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val groupedGlobalSchedules = combine(teachers, globalSchedules) { teacherList, scheduleMap ->
+        val result = mutableMapOf<String, List<Pair<Teacher, TeacherAvailability>>>()
+        scheduleMap.forEach { (teacherId, availabilities) ->
+            val teacher = teacherList.find { it.id == teacherId } ?: return@forEach
+            availabilities.filter { it.isBusy }.forEach { availability ->
+                val key = "${availability.dayIndex}_${availability.slotIndex}"
+                val currentList = result.getOrDefault(key, emptyList())
+                result[key] = currentList + (teacher to availability)
+            }
+        }
+        result
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val currentTeacher = _selectedTeacherId.flatMapLatest { id ->
         if (id == null) flowOf(null)
-        else repository.getAllTeachers().map { list -> list.find { it.id == id } }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+        else repository.getTeacherByIdFlow(id)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val availabilityMatrix = combine(_selectedTeacherId, currentTeacher, _isAdminEditing) { id, teacher, adminEditing ->
@@ -48,85 +72,23 @@ class TeacherViewModel @Inject constructor(
         } else {
             repository.getAvailability(id)
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // PDF Optimization: Availability Map for O(1) lookup in TeacherScheduleScreen
+    val availabilityMap = availabilityMatrix.map { list ->
+        list.associateBy { "${it.dayIndex}_${it.slotIndex}" }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val teacherCourses = _selectedTeacherId.flatMapLatest { id ->
         if (id == null) flowOf(emptyList<Course>())
         else repository.getCoursesByTeacher(id)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun selectTeacher(id: Int) {
-        _selectedTeacherId.value = id
-    }
-
-    // --- ACCOUNT ACTIVATION ---
-
-    suspend fun checkVerificationCode(code: String): VerificationCode? {
-        return repository.getVerificationCode(code)
-    }
-
-    suspend fun getTeacherById(id: Int): Teacher? {
-        return repository.getTeacherById(id)
-    }
-
-    suspend fun activateAccount(code: String, username: String, password: String): Boolean {
-        val user = User(username = username, password = password)
-        return repository.activateTeacherAccount(code, user)
-    }
-
-    // --- ADMIN ACTIONS ---
-
-    fun startAdminEdit() {
-        val id = _selectedTeacherId.value ?: return
-        viewModelScope.launch {
-            repository.copyAvailabilityToProposal(id)
-            _isAdminEditing.value = true
-        }
-    }
-
-    fun cancelAdminEdit() {
-        val id = _selectedTeacherId.value ?: return
-        viewModelScope.launch {
-            repository.discardProposal(id)
+        if (_selectedTeacherId.value != id) {
+            _selectedTeacherId.value = id
             _isAdminEditing.value = false
-        }
-    }
-
-    fun assignCourse(dayIndex: Int, slotIndex: Int, course: Course, classroom: String) {
-        val teacherId = _selectedTeacherId.value ?: return
-        viewModelScope.launch {
-            val conflict = repository.checkClassroomConflict(dayIndex, slotIndex, classroom, teacherId)
-            if (conflict != null) {
-                _conflictError.value = "Çakışma: $classroom dersliğinde o saatte $conflict"
-                return@launch
-            }
-            _conflictError.value = null
-            repository.updateProposal(
-                TeacherAvailability(
-                    teacherId = teacherId,
-                    dayIndex = dayIndex,
-                    slotIndex = slotIndex,
-                    isBusy = true,
-                    courseName = course.name,
-                    courseCode = course.code,
-                    classroom = classroom
-                )
-            )
-        }
-    }
-
-    fun clearSlot(dayIndex: Int, slotIndex: Int) {
-        val teacherId = _selectedTeacherId.value ?: return
-        viewModelScope.launch {
-            repository.updateProposal(
-                TeacherAvailability(
-                    teacherId = teacherId,
-                    dayIndex = dayIndex,
-                    slotIndex = slotIndex,
-                    isBusy = false
-                )
-            )
         }
     }
 
@@ -134,23 +96,151 @@ class TeacherViewModel @Inject constructor(
         _conflictError.value = null
     }
 
+    // --- PDF 8: PRODUCTION-QUALITY ERROR HANDLING & MISSING METHODS FOR ACTIVATION ---
+
+    suspend fun checkVerificationCode(code: String): VerificationCode? = withContext(Dispatchers.IO) {
+        try {
+            repository.getVerificationCode(code)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            null
+        }
+    }
+
+    suspend fun getTeacherById(id: Int): Teacher? = withContext(Dispatchers.IO) {
+        try {
+            repository.getTeacherById(id)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            null
+        }
+    }
+
+    suspend fun activateAccount(code: String, username: String, pass: String): Boolean {
+        return try {
+            withContext(Dispatchers.IO) {
+                repository.activateTeacherAccount(code, User(username = username, password = pass))
+            }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            false
+        }
+    }
+    
+    suspend fun activateTeacherAccount(code: String, user: User): Boolean {
+        return try {
+            // PDF 2.1: IO operations on IO dispatcher
+            withContext(Dispatchers.IO) {
+                repository.activateTeacherAccount(code, user)
+            }
+        } catch (e: CancellationException) {
+            throw e // PDF 8: ALWAYS re-throw CancellationException
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    // --- ADMIN ACTIONS ---
+
+    fun startAdminEdit() {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            try {
+                repository.copyAvailabilityToProposal(id)
+                _isAdminEditing.value = true
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _conflictError.value = "Düzenleme başlatılamadı: ${e.localizedMessage}"
+            }
+        }
+    }
+
+    fun cancelAdminEdit() {
+        val id = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            try {
+                repository.discardProposal(id)
+                _isAdminEditing.value = false
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+            }
+        }
+    }
+
+    fun assignCourse(dayIndex: Int, slotIndex: Int, course: Course, classroom: String) {
+        val teacherId = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            try {
+                // PDF 2.1: Heavy checks on IO/Default
+                val conflict = withContext(Dispatchers.IO) {
+                    repository.checkClassroomConflict(dayIndex, slotIndex, classroom, teacherId)
+                }
+                
+                if (conflict != null) {
+                    _conflictError.value = "Çakışma: $classroom dersliğinde o saatte $conflict"
+                    return@launch
+                }
+                _conflictError.value = null
+                repository.updateProposal(
+                    TeacherAvailability(
+                        teacherId = teacherId,
+                        dayIndex = dayIndex,
+                        slotIndex = slotIndex,
+                        isBusy = true,
+                        courseName = course.name,
+                        courseCode = course.code,
+                        classroom = classroom
+                    )
+                )
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _conflictError.value = "Hata: ${e.localizedMessage}"
+            }
+        }
+    }
+
+    fun clearSlot(dayIndex: Int, slotIndex: Int) {
+        val teacherId = _selectedTeacherId.value ?: return
+        viewModelScope.launch {
+            try {
+                repository.updateProposal(
+                    TeacherAvailability(teacherId = teacherId, dayIndex = dayIndex, slotIndex = slotIndex, isBusy = false)
+                )
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+            }
+        }
+    }
+
     fun submitAdminProposal(note: String) {
         val id = _selectedTeacherId.value ?: return
         viewModelScope.launch {
-            repository.updateScheduleStatus(id, ScheduleStatus.ADMIN_PROPOSAL, adminNote = note, teacherNote = "")
-            _isAdminEditing.value = false
+            try {
+                repository.updateScheduleStatus(id, ScheduleStatus.ADMIN_PROPOSAL, adminNote = note, teacherNote = "")
+                _isAdminEditing.value = false
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+            }
         }
     }
 
     fun addTeacher(name: String, surname: String) {
         viewModelScope.launch {
-            repository.insertTeacher(Teacher(name = name, surname = surname))
+            try {
+                repository.insertTeacher(Teacher(name = name, surname = surname))
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+            }
         }
     }
 
     fun deleteTeacher(teacher: Teacher) {
         viewModelScope.launch {
-            repository.deleteTeacher(teacher)
+            try {
+                repository.deleteTeacher(teacher)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+            }
         }
     }
 
@@ -159,16 +249,24 @@ class TeacherViewModel @Inject constructor(
     fun approveAdminProposal() {
         val id = _selectedTeacherId.value ?: return
         viewModelScope.launch {
-            repository.applyProposal(id)
-            repository.updateScheduleStatus(id, ScheduleStatus.APPROVED, adminNote = "", teacherNote = "")
+            try {
+                repository.applyProposal(id)
+                repository.updateScheduleStatus(id, ScheduleStatus.APPROVED, adminNote = "", teacherNote = "")
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+            }
         }
     }
 
     fun rejectAdminProposal(note: String) {
         val id = _selectedTeacherId.value ?: return
         viewModelScope.launch {
-            repository.discardProposal(id)
-            repository.updateScheduleStatus(id, ScheduleStatus.REJECTED, adminNote = "", teacherNote = note)
+            try {
+                repository.discardProposal(id)
+                repository.updateScheduleStatus(id, ScheduleStatus.REJECTED, adminNote = "", teacherNote = note)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+            }
         }
     }
 }

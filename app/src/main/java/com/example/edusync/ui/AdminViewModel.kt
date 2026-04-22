@@ -6,8 +6,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.edusync.data.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
@@ -29,17 +31,15 @@ class AdminViewModel @Inject constructor(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
 
-    // Kodları hocalarla eşleştiriyoruz
+    // PDF Optimization: Use Dispatchers.Default for heavy mapping and lookup
     val verificationCodes = userRepository.getAllVerificationCodes()
-        .map { codes ->
-            val allTeachers = teacherRepository.getAllTeachers().first()
+        .combine(teacherRepository.getAllTeachers()) { codes, allTeachers ->
+            val teacherMap = allTeachers.associateBy { it.id }
             codes.map { code ->
-                val teacher = allTeachers.find { it.id == code.teacherId }
-                // UI'da göstermek için teacherId yerine hoca ismini geçici olarak koda inject ediyoruz
-                // (Veya Data Class'ı UI'a özel genişletebiliriz, şimdilik isim bilgisini saklayalım)
+                val teacher = teacherMap[code.teacherId]
                 code.copy(createdBy = teacher?.let { "${it.title} ${it.name} ${it.surname}" } ?: "Genel Kod")
             }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun generateCodeForTeacher(teacherId: Int) {
         viewModelScope.launch {
@@ -47,14 +47,15 @@ class AdminViewModel @Inject constructor(
         }
     }
 
-    // Excel ve diğer işlemler...
     fun loadPreview(context: Context, uri: Uri) {
         currentUri = uri
-        val result = excelManager.getPreview(context, uri)
-        if (result.isSuccess) {
-            _excelPreview.value = result.getOrNull()
-        } else {
-            _importState.value = ImportResult.Error(result.exceptionOrNull()?.message ?: "Önizleme yüklenemedi")
+        viewModelScope.launch {
+            val result = excelManager.getPreview(context, uri)
+            if (result.isSuccess) {
+                _excelPreview.value = result.getOrNull()
+            } else {
+                _importState.value = ImportResult.Error(result.exceptionOrNull()?.message ?: "Önizleme yüklenemedi")
+            }
         }
     }
 

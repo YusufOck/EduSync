@@ -2,10 +2,12 @@ package com.example.edusync.data
 
 import com.example.edusync.util.SecurityUtils
 import com.google.firebase.database.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -15,12 +17,17 @@ class ChatRepository @Inject constructor(
 ) {
     private val messagesRef = database.getReference("messages")
 
-    suspend fun sendMessage(message: Message) {
+    suspend fun sendMessage(message: Message) = withContext(Dispatchers.IO) {
         val chatId = getChatId(message.senderId, message.receiverId)
         val ref = messagesRef.child(chatId).push()
+        
+        val encryptedContent = withContext(Dispatchers.Default) {
+            SecurityUtils.encrypt(message.content)
+        }
+        
         val encryptedMessage = message.copy(
             id = ref.key ?: "",
-            content = SecurityUtils.encrypt(message.content)
+            content = encryptedContent
         )
         ref.setValue(encryptedMessage).await()
     }
@@ -29,42 +36,55 @@ class ChatRepository @Inject constructor(
         val chatId = getChatId(currentUserId, targetUserId)
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = snapshot.children.mapNotNull { it.getValue(Message::class.java)?.let { msg ->
-                    msg.copy(content = SecurityUtils.decrypt(msg.content))
-                }}.filter { msg ->
-                    if (msg.senderId == currentUserId) !msg.deletedBySender
-                    else !msg.deletedByReceiver
+                launch(Dispatchers.Default) {
+                    val messages = snapshot.children.mapNotNull { it.getValue(Message::class.java)?.let { msg ->
+                        msg.copy(content = SecurityUtils.decrypt(msg.content))
+                    }}.filter { msg ->
+                        if (msg.senderId == currentUserId) !msg.deletedBySender
+                        else !msg.deletedByReceiver
+                    }
+                    trySend(messages)
                 }
-                trySend(list)
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
         messagesRef.child(chatId).addValueEventListener(listener)
         awaitClose { messagesRef.child(chatId).removeEventListener(listener) }
-    }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
 
-    suspend fun markAsRead(chatId: String, currentUserId: String) {
+    suspend fun markAsRead(chatId: String, currentUserId: String) = withContext(Dispatchers.IO) {
         val snapshot = messagesRef.child(chatId).get().await()
+        val updates = mutableMapOf<String, Any>()
+        
         snapshot.children.forEach { child ->
             val msg = child.getValue(Message::class.java)
             if (msg != null && msg.receiverId == currentUserId && !msg.isRead) {
-                child.ref.child("read").setValue(true)
+                updates["${child.key}/isRead"] = true
             }
+        }
+        
+        if (updates.isNotEmpty()) {
+            messagesRef.child(chatId).updateChildren(updates).await()
         }
     }
 
-    suspend fun clearChatForUser(currentUserId: String, targetUserId: String) {
+    suspend fun clearChatForUser(currentUserId: String, targetUserId: String) = withContext(Dispatchers.IO) {
         val chatId = getChatId(currentUserId, targetUserId)
         val snapshot = messagesRef.child(chatId).get().await()
+        val updates = mutableMapOf<String, Any>()
+        
         snapshot.children.forEach { child ->
             val msg = child.getValue(Message::class.java) ?: return@forEach
-            val updates = mutableMapOf<String, Any>()
+            val key = child.key ?: return@forEach
             if (msg.senderId == currentUserId) {
-                updates["deletedBySender"] = true
+                updates["$key/deletedBySender"] = true
             } else {
-                updates["deletedByReceiver"] = true
+                updates["$key/deletedByReceiver"] = true
             }
-            child.ref.updateChildren(updates).await()
+        }
+        
+        if (updates.isNotEmpty()) {
+            messagesRef.child(chatId).updateChildren(updates).await()
         }
     }
 
@@ -75,64 +95,61 @@ class ChatRepository @Inject constructor(
     fun getAllMessagesForAdmin(): Flow<Map<String, List<Message>>> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val allChats = mutableMapOf<String, List<Message>>()
-                snapshot.children.forEach { chatSnapshot ->
-                    val messages = chatSnapshot.children.mapNotNull { msgSnap ->
-                        msgSnap.getValue(Message::class.java)?.let { msg ->
-                            val isDeletedByAdmin = (msg.senderId == "admin" && msg.deletedBySender) || 
-                                                 (msg.receiverId == "admin" && msg.deletedByReceiver)
-                            
-                            if (!isDeletedByAdmin) {
-                                msg.copy(content = SecurityUtils.decrypt(msg.content))
-                            } else null
+                launch(Dispatchers.Default) {
+                    val allChats = mutableMapOf<String, List<Message>>()
+                    snapshot.children.forEach { chatSnapshot ->
+                        val messages = chatSnapshot.children.mapNotNull { msgSnap ->
+                            msgSnap.getValue(Message::class.java)?.let { msg ->
+                                val isDeletedByAdmin = (msg.senderId == "admin" && msg.deletedBySender) || 
+                                                     (msg.receiverId == "admin" && msg.deletedByReceiver)
+                                
+                                if (!isDeletedByAdmin) {
+                                    msg.copy(content = SecurityUtils.decrypt(msg.content))
+                                } else null
+                            }
+                        }
+                        if (messages.isNotEmpty()) {
+                            allChats[chatSnapshot.key ?: ""] = messages
                         }
                     }
-                    if (messages.isNotEmpty()) {
-                        allChats[chatSnapshot.key ?: ""] = messages
-                    }
+                    trySend(allChats)
                 }
-                trySend(allChats)
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
         messagesRef.addValueEventListener(listener)
         awaitClose { messagesRef.removeEventListener(listener) }
-    }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
 
-    /**
-     * Role-based unread count.
-     * Admin: Counts unique chats that have at least one unread message.
-     * Teacher: Counts every single unread message.
-     */
     fun getTotalUnreadCount(userId: String, isAdmin: Boolean): Flow<Int> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                var count = 0
-                if (isAdmin) {
-                    // Count how many different chats have unread messages
-                    snapshot.children.forEach { chatSnapshot ->
-                        val hasUnread = chatSnapshot.children.any { msgSnapshot ->
-                            val msg = msgSnapshot.getValue(Message::class.java)
-                            msg != null && msg.receiverId == userId && !msg.isRead && !msg.deletedByReceiver
+                launch(Dispatchers.Default) {
+                    var count = 0
+                    if (isAdmin) {
+                        snapshot.children.forEach { chatSnapshot ->
+                            val hasUnread = chatSnapshot.children.any { msgSnapshot ->
+                                val msg = msgSnapshot.getValue(Message::class.java)
+                                msg != null && msg.receiverId == userId && !msg.isRead && !msg.deletedByReceiver
+                            }
+                            if (hasUnread) count++
                         }
-                        if (hasUnread) count++
-                    }
-                } else {
-                    // Count every single message
-                    snapshot.children.forEach { chatSnapshot ->
-                        chatSnapshot.children.forEach { msgSnapshot ->
-                            val msg = msgSnapshot.getValue(Message::class.java)
-                            if (msg != null && msg.receiverId == userId && !msg.isRead && !msg.deletedByReceiver) {
-                                count++
+                    } else {
+                        snapshot.children.forEach { chatSnapshot ->
+                            chatSnapshot.children.forEach { msgSnapshot ->
+                                val msg = msgSnapshot.getValue(Message::class.java)
+                                if (msg != null && msg.receiverId == userId && !msg.isRead && !msg.deletedByReceiver) {
+                                    count++
+                                }
                             }
                         }
                     }
+                    trySend(count)
                 }
-                trySend(count)
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
         messagesRef.addValueEventListener(listener)
         awaitClose { messagesRef.removeEventListener(listener) }
-    }
+    }.distinctUntilChanged().flowOn(Dispatchers.IO)
 }

@@ -42,7 +42,8 @@ fun TeacherScheduleScreen(
     LaunchedEffect(teacherId) { viewModel.selectTeacher(teacherId) }
 
     val teacher by viewModel.currentTeacher.collectAsState()
-    val availability by viewModel.availabilityMatrix.collectAsState()
+    // PDF Optimization: Use Map for O(1) lookup during grid rendering
+    val availabilityMap by viewModel.availabilityMap.collectAsState()
     val courses by viewModel.teacherCourses.collectAsState()
     val isAdminEditing by viewModel.isAdminEditing.collectAsState()
     val conflictError by viewModel.conflictError.collectAsState()
@@ -184,7 +185,8 @@ fun TeacherScheduleScreen(
                     Row(modifier = Modifier.fillMaxWidth().height(65.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(time, modifier = Modifier.width(54.dp), fontSize = 11.sp, color = TextLight, textAlign = TextAlign.Center)
                         for (dayIndex in 0..4) {
-                            val slotData = availability.find { it.dayIndex == dayIndex && it.slotIndex == slotIndex }
+                            // PDF Optimization: Map lookup is O(1)
+                            val slotData = availabilityMap["${dayIndex}_${slotIndex}"]
                             val isBusy = slotData?.isBusy ?: false
                             val isLunch = slotIndex == 4
                             

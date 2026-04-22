@@ -104,7 +104,7 @@ fun ChatDetailScreen(
             contentPadding = PaddingValues(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(messages) { message ->
+            items(messages, key = { it.id }) { message ->
                 MessageBubble(
                     message = message,
                     isMe = message.senderId == currentUserId

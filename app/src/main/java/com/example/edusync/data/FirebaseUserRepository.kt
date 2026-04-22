@@ -2,16 +2,15 @@ package com.example.edusync.data
 
 import com.google.firebase.database.*
 import com.example.edusync.util.SecurityUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Phase 2 - Cloud Shared Memory (User Management)
- */
 @Singleton
 class FirebaseUserRepository @Inject constructor(
     private val database: FirebaseDatabase
@@ -19,76 +18,79 @@ class FirebaseUserRepository @Inject constructor(
     private val usersRef = database.getReference("users")
     private val codesRef = database.getReference("verification_codes")
 
-    suspend fun getUserByUsername(username: String): User? {
+    suspend fun getUserByUsername(username: String): User? = withContext(Dispatchers.IO) {
         val snapshot = usersRef.child(username).get().await()
-        return snapshot.getValue(User::class.java)
+        snapshot.getValue(User::class.java)
     }
 
-    suspend fun insertUser(user: User) {
+    suspend fun insertUser(user: User) = withContext(Dispatchers.IO) {
         usersRef.child(user.username).setValue(user).await()
     }
 
-    suspend fun getUserByTeacherId(teacherId: Int): User? {
+    suspend fun getUserByTeacherId(teacherId: Int): User? = withContext(Dispatchers.IO) {
         val snapshot = usersRef.get().await()
-        return snapshot.children.mapNotNull { it.getValue(User::class.java) }
-            .find { it.teacherId == teacherId }
+        withContext(Dispatchers.Default) {
+            snapshot.children.mapNotNull { it.getValue(User::class.java) }
+                .find { it.teacherId == teacherId }
+        }
     }
 
     fun getAllUsersFlow(): Flow<List<User>> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = snapshot.children.mapNotNull { it.getValue(User::class.java) }
-                trySend(list)
+                // PDF Optimization: Offload parsing to Default dispatcher
+                launch(Dispatchers.Default) {
+                    val list = snapshot.children.mapNotNull { it.getValue(User::class.java) }
+                    trySend(list)
+                }
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
         usersRef.addValueEventListener(listener)
         awaitClose { usersRef.removeEventListener(listener) }
-    }
+    }.flowOn(Dispatchers.IO)
 
     fun getAllVerificationCodes(): Flow<List<VerificationCode>> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = snapshot.children.mapNotNull { child ->
-                    child.getValue(VerificationCode::class.java)?.let { vc ->
-                        // Decrypt only if it looks encrypted (contains non-alphanumeric chars usually)
-                        // Or more reliably, always store raw in memory, encrypted in DB.
-                        val decryptedCode = try { SecurityUtils.decrypt(vc.code) } catch (e: Exception) { vc.code }
+                launch(Dispatchers.Default) {
+                    val list = snapshot.children.mapNotNull { it.getValue(VerificationCode::class.java) }
+                    val decryptedList = list.map { vc ->
+                        val decryptedCode = SecurityUtils.decrypt(vc.code)
                         vc.copy(code = decryptedCode)
                     }
+                    trySend(decryptedList)
                 }
-                trySend(list)
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
         }
         codesRef.addValueEventListener(listener)
         awaitClose { codesRef.removeEventListener(listener) }
-    }
+    }.flowOn(Dispatchers.IO)
 
-    suspend fun getValidVerificationCode(inputCode: String): VerificationCode? {
+    suspend fun getValidVerificationCode(inputCode: String): VerificationCode? = withContext(Dispatchers.IO) {
         val snapshot = codesRef.get().await()
-        val allCodes = snapshot.children.mapNotNull { it.getValue(VerificationCode::class.java) }
-        return allCodes.find { 
-            val decrypted = try { SecurityUtils.decrypt(it.code) } catch (e: Exception) { it.code }
-            decrypted == inputCode && !it.isUsed 
+        withContext(Dispatchers.Default) {
+            val allCodes = snapshot.children.mapNotNull { it.getValue(VerificationCode::class.java) }
+            allCodes.find { 
+                val decrypted = SecurityUtils.decrypt(it.code)
+                decrypted == inputCode && !it.isUsed 
+            }
         }
     }
 
-    /**
-     * Updates code status. We must NOT double-encrypt.
-     * The input 'code' object might have raw or encrypted code string.
-     */
-    suspend fun updateVerificationCode(code: VerificationCode) {
-        // To avoid double encryption, we first try to decrypt to get the raw value
-        val rawCode = try { SecurityUtils.decrypt(code.code) } catch (e: Exception) { code.code }
-        val encryptedCodeValue = SecurityUtils.encrypt(rawCode)
+    suspend fun updateVerificationCode(code: VerificationCode) = withContext(Dispatchers.IO) {
+        // PDF Optimization: Decrypt/Encrypt on Default dispatcher
+        val rawCode = withContext(Dispatchers.Default) { 
+            SecurityUtils.decrypt(code.code)
+        }
+        val encryptedCodeValue = withContext(Dispatchers.Default) { SecurityUtils.encrypt(rawCode) }
         val encryptedObject = code.copy(code = encryptedCodeValue)
-        // Keep consistent key using the encrypted string's hash
         codesRef.child(encryptedCodeValue.hashCode().toString()).setValue(encryptedObject).await()
     }
 
-    suspend fun insertVerificationCode(code: VerificationCode) {
-        val encryptedCodeValue = SecurityUtils.encrypt(code.code)
+    suspend fun insertVerificationCode(code: VerificationCode) = withContext(Dispatchers.IO) {
+        val encryptedCodeValue = withContext(Dispatchers.Default) { SecurityUtils.encrypt(code.code) }
         val encryptedObject = code.copy(code = encryptedCodeValue)
         codesRef.child(encryptedCodeValue.hashCode().toString()).setValue(encryptedObject).await()
     }
