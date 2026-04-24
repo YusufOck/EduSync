@@ -44,7 +44,10 @@ fun GlobalScheduleScreen(
 
     val days = listOf("Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma")
     val dayShorts = listOf("Pzt", "Sal", "Çar", "Per", "Cum")
-    val timeSlots = listOf("08:30", "09:30", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "16:30")
+    val timeSlots = listOf(
+        "08:30 - 09:20", "09:30 - 10:20", "10:30 - 11:20", "11:30 - 12:20",
+        "13:30 - 14:20", "14:30 - 15:20", "15:30 - 16:20", "16:30 - 17:20"
+    )
 
     Scaffold(
         topBar = {

@@ -38,13 +38,17 @@ fun AssignmentScreen(
     val classrooms by viewModel.classrooms.collectAsState()
     val error by viewModel.assignmentError.collectAsState()
     val success by viewModel.assignmentSuccess.collectAsState()
+    val isAssigning by viewModel.isAssigning.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf<String?>(null) }
 
     val days = listOf("Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma")
     val dayShorts = listOf("Pzt", "Sal", "Çar", "Per", "Cum")
-    val timeSlots = listOf("08:30", "09:30", "10:30", "11:30", "12:30", "13:30", "14:30", "15:30", "16:30")
+    val timeSlots = listOf(
+        "08:30 - 09:20", "09:30 - 10:20", "10:30 - 11:20", "11:30 - 12:20",
+        "13:30 - 14:20", "14:30 - 15:20", "15:30 - 16:20", "16:30 - 17:20"
+    )
 
     LaunchedEffect(success) {
         if (success) {
@@ -180,6 +184,7 @@ fun AssignmentScreen(
                 days = days,
                 timeSlots = timeSlots,
                 error = error,
+                isAssigning = isAssigning,
                 onDismiss = {
                     showAddDialog = false
                     viewModel.clearAssignmentError()
@@ -221,6 +226,7 @@ fun AssignmentDialog(
     days: List<String>,
     timeSlots: List<String>,
     error: String?,
+    isAssigning: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (Course, Teacher, Classroom, Int, Int) -> Unit
 ) {
@@ -234,6 +240,30 @@ fun AssignmentDialog(
     var teacherExpanded by remember { mutableStateOf(false) }
     var classroomExpanded by remember { mutableStateOf(false) }
     var timeExpanded by remember { mutableStateOf(false) }
+
+    val uniqueCourses = remember(courses) {
+        courses.distinctBy { it.code }
+    }
+
+    val filteredTeachers = remember(selectedCourse, teachers, courses) {
+        if (selectedCourse == null) {
+            emptyList()
+        } else {
+            val validTeacherIds = courses.filter { it.code == selectedCourse?.code }.mapNotNull { it.teacherId }
+            teachers.filter { it.id in validTeacherIds }
+        }
+    }
+
+    LaunchedEffect(selectedCourse) {
+        if (selectedCourse != null) {
+            val validTeacherIds = courses.filter { it.code == selectedCourse?.code }.mapNotNull { it.teacherId }
+            if (selectedTeacher == null || selectedTeacher?.id !in validTeacherIds) {
+                selectedTeacher = if (filteredTeachers.size == 1) filteredTeachers.first() else null
+            }
+        } else {
+            selectedTeacher = null
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -256,8 +286,8 @@ fun AssignmentDialog(
                     }
 
                     // Error
-                    item {
-                        AnimatedVisibility(visible = error != null) {
+                    if (error != null) {
+                        item {
                             Card(
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                                 colors = CardDefaults.cardColors(containerColor = ErrorRed.copy(alpha = 0.1f)),
@@ -266,7 +296,7 @@ fun AssignmentDialog(
                                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Warning, null, tint = ErrorRed, modifier = Modifier.size(20.dp))
                                     Spacer(Modifier.width(8.dp))
-                                    Text(error ?: "", color = ErrorRed, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                    Text(error, color = ErrorRed, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                                 }
                             }
                         }
@@ -286,7 +316,7 @@ fun AssignmentDialog(
                                 modifier = Modifier.fillMaxWidth().menuAnchor()
                             )
                             ExposedDropdownMenu(expanded = courseExpanded, onDismissRequest = { courseExpanded = false }) {
-                                courses.forEach { course ->
+                                uniqueCourses.forEach { course ->
                                     DropdownMenuItem(
                                         text = { Text("${course.code} - ${course.name}", fontSize = 13.sp) },
                                         onClick = { selectedCourse = course; courseExpanded = false }
@@ -311,11 +341,18 @@ fun AssignmentDialog(
                                 modifier = Modifier.fillMaxWidth().menuAnchor()
                             )
                             ExposedDropdownMenu(expanded = teacherExpanded, onDismissRequest = { teacherExpanded = false }) {
-                                teachers.forEach { teacher ->
+                                if (filteredTeachers.isEmpty()) {
                                     DropdownMenuItem(
-                                        text = { Text("${teacher.title} ${teacher.name} ${teacher.surname}", fontSize = 13.sp) },
-                                        onClick = { selectedTeacher = teacher; teacherExpanded = false }
+                                        text = { Text("Önce ders seçin", color = Color.Gray, fontSize = 13.sp) },
+                                        onClick = { teacherExpanded = false }
                                     )
+                                } else {
+                                    filteredTeachers.forEach { teacher ->
+                                        DropdownMenuItem(
+                                            text = { Text("${teacher.title} ${teacher.name} ${teacher.surname}", fontSize = 13.sp) },
+                                            onClick = { selectedTeacher = teacher; teacherExpanded = false }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -449,17 +486,27 @@ fun AssignmentDialog(
                             ) { Text("İPTAL") }
                             Button(
                                 onClick = {
-                                    if (selectedCourse != null && selectedTeacher != null && selectedClassroom != null) {
+                                    if (selectedCourse != null && selectedTeacher != null && selectedClassroom != null && !isAssigning) {
                                         onConfirm(selectedCourse!!, selectedTeacher!!, selectedClassroom!!, selectedDay, selectedTimeSlot)
                                     }
                                 },
-                                enabled = selectedCourse != null && selectedTeacher != null && selectedClassroom != null,
+                                enabled = selectedCourse != null && selectedTeacher != null && selectedClassroom != null && !isAssigning,
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
-                                Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("ATA", fontWeight = FontWeight.Bold)
+                                if (isAssigning) {
+                                    androidx.compose.material3.CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        color = Color.White,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("ATANIYOR", fontWeight = FontWeight.Bold)
+                                } else {
+                                    Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("ATA", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }

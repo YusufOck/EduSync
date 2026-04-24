@@ -339,7 +339,8 @@ class TeacherRepository @Inject constructor(
         withContext(Dispatchers.Default) {
             courses.forEach { course ->
                 val encryptedName = SecurityUtils.encrypt(course.name)
-                updates[course.code] = course.copy(name = encryptedName)
+                val key = "${course.code}_${course.teacherId}"
+                updates[key] = course.copy(name = encryptedName)
             }
         }
         if (updates.isNotEmpty()) {
@@ -453,7 +454,7 @@ class TeacherRepository @Inject constructor(
      * Returns an error message if the same classroom or teacher is already booked at that slot.
      * Returns null if no conflict exists.
      */
-    suspend fun checkScheduleConflict(day: Int, timeSlot: Int, teacherId: Int, classroomId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun checkScheduleConflict(day: Int, timeSlot: Int, teacherId: Int, classroomId: String, courseCode: String): String? = withContext(Dispatchers.IO) {
         // Check 1: schedule_entries table (new system)
         val seSnapshot = scheduleEntriesRef.get().await()
         val entries = withContext(Dispatchers.Default) {
@@ -463,6 +464,9 @@ class TeacherRepository @Inject constructor(
         for (entry in entries) {
             if (entry.day == day && entry.timeSlot == timeSlot) {
                 val decryptedCourseName = SecurityUtils.decrypt(entry.courseName)
+                if (entry.classroomId == classroomId && entry.courseCode == courseCode) {
+                    return@withContext "Bu ders zaten o saatte bu sınıfa atanmış! Lütfen farklı bir saat seçin."
+                }
                 if (entry.classroomId == classroomId) {
                     return@withContext "Bu sınıf (${classroomId}) o saatte zaten dolu! ($decryptedCourseName)"
                 }
@@ -480,6 +484,9 @@ class TeacherRepository @Inject constructor(
             val slot = teacherSnap.child(slotKey).getValue(TeacherAvailability::class.java)
             if (slot?.isBusy == true) {
                 val decryptedCourseName = SecurityUtils.decrypt(slot.courseName)
+                if (slot.classroom == classroomId && slot.courseCode == courseCode) {
+                    return@withContext "Bu ders zaten o saatte bu sınıfa atanmış! (mevcut atama)"
+                }
                 if (slot.classroom == classroomId && tId != teacherId) {
                     return@withContext "Bu sınıf (${classroomId}) o saatte zaten dolu! ($decryptedCourseName - mevcut atama)"
                 }

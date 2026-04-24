@@ -135,6 +135,9 @@ class AdminViewModel @Inject constructor(
     private val _assignmentSuccess = MutableStateFlow(false)
     val assignmentSuccess = _assignmentSuccess.asStateFlow()
 
+    private val _isAssigning = MutableStateFlow(false)
+    val isAssigning = _isAssigning.asStateFlow()
+
     fun assignSchedule(
         courseCode: String,
         courseName: String,
@@ -143,10 +146,14 @@ class AdminViewModel @Inject constructor(
         day: Int,
         timeSlot: Int
     ) {
+        if (_isAssigning.value) return
+        _isAssigning.value = true
+        _assignmentError.value = null
+
         viewModelScope.launch {
             try {
                 // Phase 2 Madde 5.2: Double-booking prevention
-                val conflict = teacherRepository.checkScheduleConflict(day, timeSlot, teacherId, classroomId)
+                val conflict = teacherRepository.checkScheduleConflict(day, timeSlot, teacherId, classroomId, courseCode)
                 if (conflict != null) {
                     _assignmentError.value = conflict
                     return@launch
@@ -183,6 +190,8 @@ class AdminViewModel @Inject constructor(
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 _assignmentError.value = "Atama yapılamadı: ${e.localizedMessage}"
+            } finally {
+                _isAssigning.value = false
             }
         }
     }

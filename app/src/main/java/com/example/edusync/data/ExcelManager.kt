@@ -130,7 +130,7 @@ class ExcelManager @Inject constructor(
                         teacherId = localExisting.id
                     } else {
                         teacherId = teacherRepository.getOrInsertTeacherOptimized(
-                            Teacher(name = name, surname = surname, title = title),
+                            Teacher(name = name, surname = surname, title = title, department = "Bilgisayar Muhendisligi"),
                             existingTeachers
                         ).toInt()
                         // Add to local list to prevent duplicates for subsequent rows
