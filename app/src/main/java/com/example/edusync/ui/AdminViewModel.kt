@@ -2,7 +2,6 @@ package com.example.edusync.ui
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.edusync.data.*
@@ -78,6 +77,48 @@ class AdminViewModel @Inject constructor(
 
     fun clearClassroomError() { _classroomError.value = null }
 
+    // ========== Classroom Excel Import ==========
+
+    private val _classroomImportState = MutableStateFlow<ImportResult?>(null)
+    val classroomImportState = _classroomImportState.asStateFlow()
+
+    private val _classroomPreview = MutableStateFlow<List<ClassroomPreviewItem>?>(null)
+    val classroomPreview = _classroomPreview.asStateFlow()
+
+    private var classroomUri: Uri? = null
+
+    fun loadClassroomPreview(context: Context, uri: Uri) {
+        classroomUri = uri
+        viewModelScope.launch {
+            val result = excelManager.getClassroomPreview(context, uri)
+            if (result.isSuccess) {
+                _classroomPreview.value = result.getOrNull()
+            } else {
+                _classroomImportState.value = ImportResult.Error(result.exceptionOrNull()?.message ?: "Önizleme yüklenemedi")
+            }
+        }
+    }
+
+    fun confirmClassroomImport(context: Context) {
+        val uri = classroomUri ?: return
+        viewModelScope.launch {
+            _classroomImportState.value = ImportResult.Loading
+            val result = excelManager.importClassrooms(context, uri)
+            _classroomImportState.value = if (result.isSuccess) {
+                ImportResult.Success(result.getOrNull() ?: 0)
+            } else {
+                ImportResult.Error(result.exceptionOrNull()?.message ?: "Aktarım hatası")
+            }
+            _classroomPreview.value = null
+        }
+    }
+
+    fun clearClassroomImportState() {
+        _classroomImportState.value = null
+        _classroomPreview.value = null
+        classroomUri = null
+    }
+
     // ========== Phase 2: Schedule Entry (Assignment) Management ==========
 
     val allCourses = teacherRepository.getAllCourses().stateIn(
@@ -111,6 +152,7 @@ class AdminViewModel @Inject constructor(
                     return@launch
                 }
 
+                // 1) Insert into schedule_entries (new Phase 2 table)
                 teacherRepository.insertScheduleEntry(
                     ScheduleEntry(
                         courseCode = courseCode,
@@ -121,6 +163,21 @@ class AdminViewModel @Inject constructor(
                         timeSlot = timeSlot
                     )
                 )
+
+                // 2) SYNC: Also write to the old availability table so
+                //    TeacherScheduleScreen & GlobalScheduleScreen display the data
+                teacherRepository.syncScheduleToAvailability(
+                    TeacherAvailability(
+                        teacherId = teacherId,
+                        dayIndex = day,
+                        slotIndex = timeSlot,
+                        isBusy = true,
+                        courseName = courseName,
+                        courseCode = courseCode,
+                        classroom = classroomId
+                    )
+                )
+
                 _assignmentError.value = null
                 _assignmentSuccess.value = true
             } catch (e: Exception) {
@@ -133,7 +190,20 @@ class AdminViewModel @Inject constructor(
     fun deleteScheduleEntry(entryId: String) {
         viewModelScope.launch {
             try {
+                // Find the entry first so we can also remove from availability
+                val entry = scheduleEntries.value.find { it.id == entryId }
                 teacherRepository.deleteScheduleEntry(entryId)
+                // SYNC: Also clear from the old availability table
+                if (entry != null) {
+                    teacherRepository.syncScheduleToAvailability(
+                        TeacherAvailability(
+                            teacherId = entry.teacherId,
+                            dayIndex = entry.day,
+                            slotIndex = entry.timeSlot,
+                            isBusy = false
+                        )
+                    )
+                }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
             }

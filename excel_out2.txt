@@ -1,0 +1,6 @@
+Course Code|Course Name|Lecturer
+CNG 380|Distributed Operating System |Assist. Prof. Zeshan Iqbal
+CNG 382|Artıfıcıal Intellıgence Agents And Applıcatıons|Prof.Dr. Ramazan Katırcı
+CNG 386|Computer Networks |Assist. Prof. Zeshan Iqbal
+CNG 358|Data Mining |Prof.Dr. Metin Zontul
+CNG 372|Internet of Things |Prof.Dr. Sivaram Murugan

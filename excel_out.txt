@@ -1,0 +1,13 @@
+=== liste.xlsx ===
+Course Code|Course Name|Lecturer
+CNG 103|Intro to Programming|Assoc. Prof. Halit Bakır
+CNG 101|Intro to Computer Engineering|Assist. Prof. Rezan Bakır
+CNG 104|Programming|Assist. Prof. Porkodi Sivaram
+EEE 102|Circuit Theory I|Assist. Prof. Recep Emir
+EEE 204|Digital System Design|Assist. Prof. Nurbanu Güzey
+EEE 206|Microprocessors|Assist. Prof. Celal Alagöz
+CNG 244|Operating Systems|Prof. Sivaram Murugan
+CNG 212|Programming Languages|Assoc. Prof. Farhan Aadil
+CNG 342|Computer Networks|Assist. Prof. Rezan Bakır
+CNG 346|Mobile Programming|Assoc. Prof. Farhan Aadil
+      ||

@@ -1,5 +1,8 @@
 package com.example.edusync.ui
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -15,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -28,11 +32,20 @@ fun ClassroomScreen(
     onNavigateBack: () -> Unit,
     viewModel: AdminViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val classrooms by viewModel.classrooms.collectAsState()
     val error by viewModel.classroomError.collectAsState()
+    val classroomImportState by viewModel.classroomImportState.collectAsState()
+    val classroomPreview by viewModel.classroomPreview.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf<String?>(null) }
+
+    val classroomExcelLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { viewModel.loadClassroomPreview(context, it) }
+    }
 
     Scaffold(
         topBar = {
@@ -41,6 +54,14 @@ fun ClassroomScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri", tint = PrimaryBlue)
+                    }
+                },
+                actions = {
+                    // Excel Import Button
+                    IconButton(onClick = {
+                        classroomExcelLauncher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    }) {
+                        Icon(Icons.Default.FileUpload, "Excel Aktar", tint = SuccessGreen)
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.White)
@@ -110,7 +131,17 @@ fun ClassroomScreen(
                         Icon(Icons.Default.MeetingRoom, null, tint = Color.LightGray, modifier = Modifier.size(64.dp))
                         Spacer(Modifier.height(16.dp))
                         Text("Henüz sınıf eklenmemiş", color = Color.Gray, fontWeight = FontWeight.Medium)
-                        Text("Sağ alttaki + butonuna tıklayarak ekleyin", color = Color.LightGray, fontSize = 12.sp)
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                classroomExcelLauncher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                            },
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.FileUpload, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Excel'den Aktar")
+                        }
                     }
                 }
             } else {
@@ -241,6 +272,112 @@ fun ClassroomScreen(
                     TextButton(onClick = { showDeleteDialog = null }) { Text("İPTAL") }
                 }
             )
+        }
+
+        // ========== Classroom Excel Preview Dialog ==========
+        val currentPreview = classroomPreview
+        if (currentPreview != null) {
+            AlertDialog(
+                onDismissRequest = { viewModel.clearClassroomImportState() },
+                modifier = Modifier.fillMaxWidth(0.95f),
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+                content = {
+                    Surface(
+                        shape = RoundedCornerShape(28.dp),
+                        color = Color.White,
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(24.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.FileUpload, null, tint = SuccessGreen)
+                                Spacer(Modifier.width(12.dp))
+                                Text("Sınıf Önizleme", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text("Excel Formatı: Room Code | Capacity | Department", fontSize = 12.sp, color = Color.Gray)
+                            Spacer(Modifier.height(16.dp))
+
+                            // Preview list
+                            Card(
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp),
+                                colors = CardDefaults.cardColors(containerColor = BackgroundLight),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                LazyColumn(modifier = Modifier.padding(12.dp)) {
+                                    items(currentPreview) { item ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(
+                                                color = PrimaryBlue.copy(alpha = 0.1f),
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.size(36.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                                    Text(item.roomCode.take(2), fontWeight = FontWeight.Bold, color = PrimaryBlue, fontSize = 12.sp)
+                                                }
+                                            }
+                                            Spacer(Modifier.width(12.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(item.roomCode, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                Text("${item.capacity} kişi • ${item.department}", fontSize = 11.sp, color = Color.Gray)
+                                            }
+                                        }
+                                        HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.5f))
+                                    }
+                                }
+                            }
+
+                            Spacer(Modifier.height(20.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                OutlinedButton(
+                                    onClick = { viewModel.clearClassroomImportState() },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) { Text("İPTAL") }
+                                Button(
+                                    onClick = { viewModel.confirmClassroomImport(context) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)
+                                ) {
+                                    Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("AKTAR", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+        }
+
+        // ========== Classroom Import Result Dialogs ==========
+        when (val state = classroomImportState) {
+            is ImportResult.Loading -> {
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            is ImportResult.Success -> {
+                AlertDialog(
+                    onDismissRequest = { viewModel.clearClassroomImportState() },
+                    icon = { Icon(Icons.Default.CheckCircle, null, tint = SuccessGreen) },
+                    title = { Text("Başarılı") },
+                    text = { Text("${state.count} sınıf başarıyla sisteme aktarıldı.") },
+                    confirmButton = { TextButton(onClick = { viewModel.clearClassroomImportState() }) { Text("Tamam") } }
+                )
+            }
+            is ImportResult.Error -> {
+                AlertDialog(
+                    onDismissRequest = { viewModel.clearClassroomImportState() },
+                    title = { Text("Hata") },
+                    text = { Text(state.message) },
+                    confirmButton = { TextButton(onClick = { viewModel.clearClassroomImportState() }) { Text("Kapat") } }
+                )
+            }
+            else -> {}
         }
     }
 }

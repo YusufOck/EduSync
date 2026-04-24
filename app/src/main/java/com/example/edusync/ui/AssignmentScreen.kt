@@ -67,7 +67,10 @@ fun AssignmentScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { showAddDialog = true },
+                onClick = {
+                    viewModel.clearAssignmentError()
+                    showAddDialog = true
+                },
                 containerColor = PrimaryBlue,
                 contentColor = Color.White,
                 shape = RoundedCornerShape(16.dp)
@@ -335,8 +338,51 @@ fun AssignmentDialog(
                             ExposedDropdownMenu(expanded = classroomExpanded, onDismissRequest = { classroomExpanded = false }) {
                                 classrooms.forEach { classroom ->
                                     DropdownMenuItem(
-                                        text = { Text("${classroom.roomCode} — ${classroom.capacity} kişi", fontSize = 13.sp) },
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(classroom.roomCode, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    if (classroom.department.isNotEmpty()) {
+                                                        Text(classroom.department, fontSize = 11.sp, color = Color.Gray)
+                                                    }
+                                                }
+                                                Surface(
+                                                    color = PrimaryBlue.copy(alpha = 0.1f),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Text(
+                                                        "${classroom.capacity} kişi",
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = PrimaryBlue
+                                                    )
+                                                }
+                                            }
+                                        },
                                         onClick = { selectedClassroom = classroom; classroomExpanded = false }
+                                    )
+                                }
+                            }
+                        }
+                        // Capacity info chip
+                        selectedClassroom?.let { cr ->
+                            Spacer(Modifier.height(6.dp))
+                            Surface(
+                                color = SecondaryBlue.copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.People, null, tint = SecondaryBlue, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "Kapasite: ${cr.capacity} kişi" + if (cr.department.isNotEmpty()) " • ${cr.department}" else "",
+                                        fontSize = 11.sp,
+                                        color = SecondaryBlue,
+                                        fontWeight = FontWeight.Medium
                                     )
                                 }
                             }

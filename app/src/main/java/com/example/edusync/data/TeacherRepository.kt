@@ -214,7 +214,10 @@ class TeacherRepository @Inject constructor(
             override fun onDataChange(snapshot: DataSnapshot) {
                 launch(Dispatchers.Default) {
                     val list = snapshot.children.mapNotNull { it.getValue(TeacherAvailability::class.java) }
-                    trySend(list)
+                    val decryptedList = list.map { a -> 
+                        a.copy(courseName = SecurityUtils.decrypt(a.courseName)) 
+                    }
+                    trySend(decryptedList)
                 }
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
@@ -231,7 +234,10 @@ class TeacherRepository @Inject constructor(
             override fun onDataChange(snapshot: DataSnapshot) {
                 launch(Dispatchers.Default) {
                     val list = snapshot.children.mapNotNull { it.getValue(TeacherAvailability::class.java) }
-                    trySend(list)
+                    val decryptedList = list.map { a -> 
+                        a.copy(courseName = SecurityUtils.decrypt(a.courseName)) 
+                    }
+                    trySend(decryptedList)
                 }
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
@@ -284,7 +290,8 @@ class TeacherRepository @Inject constructor(
                 return@withContext withContext(Dispatchers.Default) {
                     val name = SecurityUtils.decrypt(tData?.name)
                     val surname = SecurityUtils.decrypt(tData?.surname)
-                    "$name $surname hocanın dersi var."
+                    val decryptedCourse = SecurityUtils.decrypt(slot.courseName)
+                    "$name $surname hocanın dersi var. ($decryptedCourse)"
                 }
             }
         }
@@ -298,7 +305,10 @@ class TeacherRepository @Inject constructor(
                     val resultMap = mutableMapOf<Int, List<TeacherAvailability>>()
                     snapshot.children.forEach { teacherSnap ->
                         val tid = teacherSnap.key?.toIntOrNull() ?: return@forEach
-                        resultMap[tid] = teacherSnap.children.mapNotNull { teacherSnap.child(it.key!!).getValue(TeacherAvailability::class.java) }
+                        resultMap[tid] = teacherSnap.children.mapNotNull { 
+                            val slot = teacherSnap.child(it.key!!).getValue(TeacherAvailability::class.java)
+                            slot?.copy(courseName = SecurityUtils.decrypt(slot.courseName))
+                        }
                     }
                     trySend(resultMap)
                 }
@@ -403,6 +413,19 @@ class TeacherRepository @Inject constructor(
         classroomsRef.child(classroomId).removeValue().await()
     }
 
+    suspend fun insertClassroomsBatch(classrooms: List<Classroom>) = withContext(Dispatchers.IO) {
+        val updates = mutableMapOf<String, Any>()
+        withContext(Dispatchers.Default) {
+            classrooms.forEach { classroom ->
+                val id = classroom.roomCode.ifEmpty { System.currentTimeMillis().toString() }
+                updates[id] = classroom.copy(id = id)
+            }
+        }
+        if (updates.isNotEmpty()) {
+            classroomsRef.updateChildren(updates).await()
+        }
+    }
+
     // ========== Phase 2: Schedule Entry (Assignment) Management ==========
 
     private val scheduleEntriesRef = database.getReference("schedule_entries")
@@ -412,7 +435,10 @@ class TeacherRepository @Inject constructor(
             override fun onDataChange(snapshot: DataSnapshot) {
                 launch(Dispatchers.Default) {
                     val list = snapshot.children.mapNotNull { it.getValue(ScheduleEntry::class.java) }
-                    trySend(list)
+                    val decryptedList = list.map { s ->
+                        s.copy(courseName = SecurityUtils.decrypt(s.courseName))
+                    }
+                    trySend(decryptedList)
                 }
             }
             override fun onCancelled(error: DatabaseError) { close(error.toException()) }
@@ -423,25 +449,46 @@ class TeacherRepository @Inject constructor(
 
     /**
      * Phase 2 Madde 5.2: Double-booking prevention.
+     * Checks BOTH schedule_entries (new) AND availability (legacy) tables.
      * Returns an error message if the same classroom or teacher is already booked at that slot.
      * Returns null if no conflict exists.
      */
     suspend fun checkScheduleConflict(day: Int, timeSlot: Int, teacherId: Int, classroomId: String): String? = withContext(Dispatchers.IO) {
-        val snapshot = scheduleEntriesRef.get().await()
+        // Check 1: schedule_entries table (new system)
+        val seSnapshot = scheduleEntriesRef.get().await()
         val entries = withContext(Dispatchers.Default) {
-            snapshot.children.mapNotNull { it.getValue(ScheduleEntry::class.java) }
+            seSnapshot.children.mapNotNull { it.getValue(ScheduleEntry::class.java) }
         }
 
         for (entry in entries) {
             if (entry.day == day && entry.timeSlot == timeSlot) {
+                val decryptedCourseName = SecurityUtils.decrypt(entry.courseName)
                 if (entry.classroomId == classroomId) {
-                    return@withContext "Bu sınıf (${classroomId}) o saatte zaten dolu! (${entry.courseCode})"
+                    return@withContext "Bu sınıf (${classroomId}) o saatte zaten dolu! ($decryptedCourseName)"
                 }
                 if (entry.teacherId == teacherId) {
-                    return@withContext "Bu hoca o saatte zaten başka bir derse atanmış! (${entry.courseCode})"
+                    return@withContext "Bu hoca o saatte zaten başka bir derse atanmış! ($decryptedCourseName)"
                 }
             }
         }
+
+        // Check 2: availability table (legacy system) — also prevents cross-system conflicts
+        val availSnapshot = availabilityRef.get().await()
+        for (teacherSnap in availSnapshot.children) {
+            val tId = teacherSnap.key?.toIntOrNull() ?: continue
+            val slotKey = "${day}_${timeSlot}"
+            val slot = teacherSnap.child(slotKey).getValue(TeacherAvailability::class.java)
+            if (slot?.isBusy == true) {
+                val decryptedCourseName = SecurityUtils.decrypt(slot.courseName)
+                if (slot.classroom == classroomId && tId != teacherId) {
+                    return@withContext "Bu sınıf (${classroomId}) o saatte zaten dolu! ($decryptedCourseName - mevcut atama)"
+                }
+                if (tId == teacherId) {
+                    return@withContext "Bu hoca o saatte zaten başka bir derse atanmış! ($decryptedCourseName - mevcut atama)"
+                }
+            }
+        }
+
         null
     }
 
@@ -453,5 +500,16 @@ class TeacherRepository @Inject constructor(
 
     suspend fun deleteScheduleEntry(entryId: String) = withContext(Dispatchers.IO) {
         scheduleEntriesRef.child(entryId).removeValue().await()
+    }
+
+    /**
+     * Phase 2: Sync bridge between schedule_entries (new) and availability (legacy).
+     * When admin creates/deletes an assignment via AssignmentScreen, this function
+     * mirrors the change into the old availability table so TeacherScheduleScreen
+     * and GlobalScheduleScreen display the data correctly.
+     */
+    suspend fun syncScheduleToAvailability(availability: TeacherAvailability) = withContext(Dispatchers.IO) {
+        val key = "${availability.dayIndex}_${availability.slotIndex}"
+        availabilityRef.child(availability.teacherId.toString()).child(key).setValue(availability).await()
     }
 }
