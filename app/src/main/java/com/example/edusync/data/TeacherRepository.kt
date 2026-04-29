@@ -175,10 +175,15 @@ class TeacherRepository @Inject constructor(
 
         // Mapped to Task 4: Race Condition fixed with Firebase Transaction
         val teacherId = kotlinx.coroutines.suspendCancellableCoroutine<Int?> { continuation ->
+            var isResumed = false
             codesRef.child(code).runTransaction(object : Transaction.Handler {
                 override fun doTransaction(currentData: MutableData): Transaction.Result {
                     val vCode = currentData.getValue(VerificationCode::class.java)
-                    if (vCode == null || vCode.isUsed || vCode.teacherId == null) {
+                    if (vCode == null) {
+                        // Cache miss might cause this to be null. Return success to force a server sync.
+                        return Transaction.success(currentData)
+                    }
+                    if (vCode.isUsed || vCode.teacherId == null) {
                         return Transaction.abort()
                     }
                     vCode.isUsed = true
@@ -187,11 +192,18 @@ class TeacherRepository @Inject constructor(
                 }
 
                 override fun onComplete(error: DatabaseError?, committed: Boolean, snapshot: DataSnapshot?) {
-                    if (committed && error == null) {
-                        val vCode = snapshot?.getValue(VerificationCode::class.java)
-                        continuation.resumeWith(Result.success(vCode?.teacherId))
-                    } else {
-                        continuation.resumeWith(Result.success(null))
+                    if (!isResumed) {
+                        isResumed = true
+                        if (committed && error == null) {
+                            val vCode = snapshot?.getValue(VerificationCode::class.java)
+                            if (vCode == null || vCode.teacherId == null || !vCode.isUsed) {
+                                continuation.resumeWith(Result.success(null))
+                            } else {
+                                continuation.resumeWith(Result.success(vCode.teacherId))
+                            }
+                        } else {
+                            continuation.resumeWith(Result.success(null))
+                        }
                     }
                 }
             })

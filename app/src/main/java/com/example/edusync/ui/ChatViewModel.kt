@@ -80,12 +80,11 @@ class ChatViewModel @Inject constructor(
         teacherRepository.getAllTeachers(),
         userRepository.getAllUsersFlow()
     ) { teachers, users ->
-        users.filter { it.role == UserRole.TEACHER }.mapNotNull { user ->
-            val teacher = teachers.find { it.id == user.teacherId }
-            if (teacher != null) {
-                user.username to "${teacher.title} ${teacher.name} ${teacher.surname}"
-            } else null
-        }
+        teachers.map { teacher ->
+            val user = users.find { it.teacherId == teacher.id && it.role == UserRole.TEACHER }
+            val fullName = "${teacher.title} ${teacher.name} ${teacher.surname}"
+            Triple(teacher.id, fullName, user?.username)
+        }.sortedBy { it.second }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun sendMessage(content: String) {

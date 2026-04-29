@@ -169,7 +169,7 @@ fun ChatSummaryItem(
 
 @Composable
 fun NewChatDialog(
-    teachers: List<Pair<String, String>>,
+    teachers: List<Triple<Int, String, String?>>,
     onDismiss: () -> Unit,
     onTeacherSelected: (String) -> Unit
 ) {
@@ -180,22 +180,44 @@ fun NewChatDialog(
         title = { Text("Mesaj Gönderilecek Hoca", color = PrimaryBlue, fontWeight = FontWeight.Bold) },
         text = {
             LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
-                items(teachers) { (username, fullName) ->
+                items(teachers) { (_, fullName, username) ->
+                    val isActivated = username != null
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
-                            .clickable { onTeacherSelected(username) },
+                            .then(if (isActivated) Modifier.clickable { onTeacherSelected(username!!) } else Modifier),
                         shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = BackgroundLight)
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isActivated) BackgroundLight else Color.LightGray.copy(alpha = 0.2f)
+                        )
                     ) {
                         Row(
                             modifier = Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Person, null, tint = PrimaryBlue, modifier = Modifier.size(24.dp))
+                            Icon(
+                                Icons.Default.Person, 
+                                contentDescription = null, 
+                                tint = if (isActivated) PrimaryBlue else Color.Gray, 
+                                modifier = Modifier.size(24.dp)
+                            )
                             Spacer(Modifier.width(12.dp))
-                            Text(text = fullName, fontWeight = FontWeight.Medium, color = TextDark)
+                            Column {
+                                Text(
+                                    text = fullName, 
+                                    fontWeight = FontWeight.Medium, 
+                                    color = if (isActivated) TextDark else Color.Gray
+                                )
+                                if (!isActivated) {
+                                    Text(
+                                        text = "Aktivasyon Bekliyor", 
+                                        color = ErrorRed, 
+                                        fontSize = 11.sp, 
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
                 }
