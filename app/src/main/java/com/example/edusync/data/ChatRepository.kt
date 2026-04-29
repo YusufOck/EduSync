@@ -59,7 +59,7 @@ class ChatRepository @Inject constructor(
         snapshot.children.forEach { child ->
             val msg = child.getValue(Message::class.java)
             if (msg != null && msg.receiverId == currentUserId && !msg.isRead) {
-                updates["${child.key}/isRead"] = true
+                updates["${child.key}/read"] = true
             }
         }
         

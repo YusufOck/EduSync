@@ -476,9 +476,13 @@ class TeacherRepository @Inject constructor(
         for (entry in entries) {
             if (entry.day == day && entry.timeSlot == timeSlot) {
                 val decryptedCourseName = SecurityUtils.decrypt(entry.courseName)
-                if (entry.classroomId == classroomId && entry.courseCode == courseCode) {
-                    return@withContext "Bu ders zaten o saatte bu sınıfa atanmış! Lütfen farklı bir saat seçin."
+                
+                // If it's the exact same teacher, classroom, and course
+                if (entry.teacherId == teacherId && entry.classroomId == classroomId && entry.courseCode == courseCode) {
+                    return@withContext "SAME_EXACT_ASSIGNMENT"
                 }
+                
+                // Otherwise, check for real conflicts
                 if (entry.classroomId == classroomId) {
                     return@withContext "Bu sınıf (${classroomId}) o saatte zaten dolu! ($decryptedCourseName)"
                 }
@@ -496,9 +500,12 @@ class TeacherRepository @Inject constructor(
             val slot = teacherSnap.child(slotKey).getValue(TeacherAvailability::class.java)
             if (slot?.isBusy == true) {
                 val decryptedCourseName = SecurityUtils.decrypt(slot.courseName)
-                if (slot.classroom == classroomId && slot.courseCode == courseCode) {
-                    return@withContext "Bu ders zaten o saatte bu sınıfa atanmış! (mevcut atama)"
+                
+                // If it's the exact same teacher, classroom, and course
+                if (tId == teacherId && slot.classroom == classroomId && slot.courseCode == courseCode) {
+                    return@withContext "SAME_EXACT_ASSIGNMENT"
                 }
+
                 if (slot.classroom == classroomId && tId != teacherId) {
                     return@withContext "Bu sınıf (${classroomId}) o saatte zaten dolu! ($decryptedCourseName - mevcut atama)"
                 }

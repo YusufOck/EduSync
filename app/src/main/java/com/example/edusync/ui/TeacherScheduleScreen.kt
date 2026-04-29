@@ -47,6 +47,10 @@ fun TeacherScheduleScreen(
     val courses by viewModel.teacherCourses.collectAsState()
     val isAdminEditing by viewModel.isAdminEditing.collectAsState()
     val conflictError by viewModel.conflictError.collectAsState()
+    
+    val classrooms by viewModel.classrooms.collectAsState()
+    val scheduleEntries by viewModel.scheduleEntries.collectAsState()
+    val isAssigning by viewModel.isAssigning.collectAsState()
 
     var showNoteDialog by remember { mutableStateOf(false) }
     var showAssignDialog by remember { mutableStateOf(false) }
@@ -227,9 +231,19 @@ fun TeacherScheduleScreen(
         if (showAssignDialog && selectedSlot != null) {
             var selectedCourse by remember { mutableStateOf<Course?>(null) }
             var classroomInput by remember { mutableStateOf("") }
+            var expanded by remember { mutableStateOf(false) }
             
+            // Calculate available classrooms for this slot
+            val (dayIndex, slotIndex) = selectedSlot!!
+            val usedClassrooms = scheduleEntries
+                .filter { it.day == dayIndex && it.timeSlot == slotIndex }
+                .map { it.classroomId }
+                .toSet()
+            
+            val availableClassrooms = classrooms.filter { it.roomCode !in usedClassrooms }
+
             AlertDialog(
-                onDismissRequest = { showAssignDialog = false },
+                onDismissRequest = { if (!isAssigning) showAssignDialog = false },
                 title = { Text("Ders Ata") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -245,24 +259,61 @@ fun TeacherScheduleScreen(
                                 Text("${course.code} - ${course.name}", fontSize = 12.sp)
                             }
                         }
-                        OutlinedTextField(
-                            value = classroomInput,
-                            onValueChange = { classroomInput = it },
-                            label = { Text("Derslik (örn: D101)") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        
+                        Text("Derslik Seçin", style = MaterialTheme.typography.labelMedium)
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = !expanded }
+                        ) {
+                            OutlinedTextField(
+                                value = classroomInput,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text(if (availableClassrooms.isEmpty()) "Müsait Derslik Yok" else "Derslik") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                                modifier = Modifier.menuAnchor().fillMaxWidth()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                availableClassrooms.forEach { cr ->
+                                    DropdownMenuItem(
+                                        text = { Text("${cr.roomCode} (Kapasite: ${cr.capacity})") },
+                                        onClick = {
+                                            classroomInput = cr.roomCode
+                                            expanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
                 },
                 confirmButton = {
                     Button(
-                        enabled = selectedCourse != null && classroomInput.isNotBlank(),
+                        enabled = selectedCourse != null && classroomInput.isNotBlank() && !isAssigning,
                         onClick = {
-                            viewModel.assignCourse(selectedSlot!!.first, selectedSlot!!.second, selectedCourse!!, classroomInput)
+                            viewModel.assignCourse(dayIndex, slotIndex, selectedCourse!!, classroomInput)
                             showAssignDialog = false
                         }
-                    ) { Text("ATA") }
+                    ) { 
+                        if (isAssigning) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("ATANIYOR")
+                        } else {
+                            Text("ATA") 
+                        }
+                    }
                 },
-                dismissButton = { TextButton(onClick = { showAssignDialog = false }) { Text("İPTAL") } }
+                dismissButton = { 
+                    TextButton(
+                        enabled = !isAssigning,
+                        onClick = { showAssignDialog = false }
+                    ) { Text("İPTAL") } 
+                }
             )
         }
 

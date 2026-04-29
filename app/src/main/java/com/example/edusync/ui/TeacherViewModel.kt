@@ -34,6 +34,15 @@ class TeacherViewModel @Inject constructor(
     private val _conflictError = MutableStateFlow<String?>(null)
     val conflictError = _conflictError.asStateFlow()
 
+    private val _isAssigning = MutableStateFlow(false)
+    val isAssigning = _isAssigning.asStateFlow()
+
+    val classrooms = repository.getAllClassrooms()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val scheduleEntries = repository.getAllScheduleEntries()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // PDF 3.2: Using StateFlow for predictable UI updates
     val teachers = repository.getAllTeachers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -169,18 +178,27 @@ class TeacherViewModel @Inject constructor(
 
     fun assignCourse(dayIndex: Int, slotIndex: Int, course: Course, classroom: String) {
         val teacherId = _selectedTeacherId.value ?: return
+        if (_isAssigning.value) return
+        _isAssigning.value = true
+        
         viewModelScope.launch {
             try {
                 // PDF 2.1: Heavy checks on IO/Default
                 val conflict = withContext(Dispatchers.IO) {
-                    repository.checkClassroomConflict(dayIndex, slotIndex, classroom, teacherId)
+                    repository.checkScheduleConflict(dayIndex, slotIndex, teacherId, classroom, course.code)
                 }
                 
                 if (conflict != null) {
-                    _conflictError.value = "Çakışma: $classroom dersliğinde o saatte $conflict"
-                    return@launch
+                    if (conflict == "SAME_EXACT_ASSIGNMENT") {
+                        // Allow update, but show a specific info message that it was the existing program
+                        _conflictError.value = "Mevcut eski program bu"
+                    } else {
+                        _conflictError.value = conflict
+                        return@launch
+                    }
+                } else {
+                    _conflictError.value = null
                 }
-                _conflictError.value = null
                 repository.updateProposal(
                     TeacherAvailability(
                         teacherId = teacherId,
@@ -195,6 +213,8 @@ class TeacherViewModel @Inject constructor(
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 _conflictError.value = "Hata: ${e.localizedMessage}"
+            } finally {
+                _isAssigning.value = false
             }
         }
     }
